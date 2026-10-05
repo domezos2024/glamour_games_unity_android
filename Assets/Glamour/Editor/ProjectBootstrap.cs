@@ -1,6 +1,7 @@
 using System.IO;
 using System.Linq;
 using UnityEditor;
+using UnityEditor.Android;
 using UnityEditor.Build;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -130,7 +131,7 @@ namespace GlamourGames.EditorTools
             PlayerSettings.SetUseDefaultGraphicsAPIs(BuildTarget.Android, false);
             PlayerSettings.SetGraphicsAPIs(BuildTarget.Android, new[] { GraphicsDeviceType.Vulkan, GraphicsDeviceType.OpenGLES3 });
             PlayerSettings.SplashScreen.show = false;
-            PlayerSettings.SplashScreen.showUnitySplashLogo = false;
+            PlayerSettings.SplashScreen.showUnityLogo = false;
             PlayerSettings.SplashScreen.backgroundColor = new Color(6 / 255f, 1 / 255f, 15 / 255f);
             if (PlayerSettings.Android.bundleVersionCode < 1) PlayerSettings.Android.bundleVersionCode = 1;
             EnsureIcons();
