@@ -240,7 +240,14 @@ namespace GlamourGames
             float cx = (sw / 2f - (sa.x + sa.width / 2f)) / scale, cy = (sh / 2f - (sa.y + sa.height / 2f)) / scale;
             cam.orthographicSize = halfH; cam.transform.position = new Vector3(cx, cy, -10);
             VX0 = 800 + cx - halfW; VX1 = 800 + cx + halfW; VY0 = 450 - (cy + halfH); VY1 = 450 - (cy - halfH);
+            if (Platform.Touch && (sw != lastSw || sh != lastSh || sa != lastSa))
+            {
+                lastSw = sw; lastSh = sh; lastSa = sa;
+                // Pixel (von links oben) = (ox + x * scale, oy + y * scale) fuer Designkoordinaten (x, y): wird von den Test-Skripten gelesen
+                Log.I($"Ansicht: Bildschirm {sw}x{sh}, sicherer Bereich {sa.x:0},{sa.y:0},{sa.width:0},{sa.height:0}, scale={scale:0.0000} ox={sa.x + sa.width / 2f - 800 * scale:0.0} oy={sh - (sa.y + sa.height / 2f) - 450 * scale:0.0}");
+            }
         }
+        float lastSw, lastSh; Rect lastSa;
 
         int touchId = -1; bool parkNext;
         void PointerTo(Vector2 screen) { var wp = cam.ScreenToWorldPoint(new Vector3(screen.x, screen.y, 10)); MoveTo(wp.x + 800, 450 - wp.y); }
