@@ -27,6 +27,7 @@ namespace GlamourGames
 
         public static void Init(GameObject host)
         {
+            if (Platform.Touch) { var cfg = AudioSettings.GetConfiguration(); cfg.dspBufferSize = 512; AudioSettings.Reset(cfg); } // geringe Latenz fuer Effekte
             Muted = Save.Int("muted", 0) != 0;
             Track = Math.Clamp(Save.Int("music", 0), -1, TrackNames.Length - 1); MusicOff = Save.Int("musicoff", 0) != 0; SfxOff = Save.Int("sfxoff", 0) != 0;
             Vol = Save.Int("sfxvol", 50) / 100f; MusicVol = Save.Int("musicvol", 80) / 100f;

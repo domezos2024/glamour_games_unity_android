@@ -132,7 +132,7 @@ namespace GlamourGames
         {
             W.PlayerBox(c, Gfx.R(40, 115, 260, 190), PName(0), score[0].ToString(), C.Cyan, over == 0 && cur == 1, Time, "Siege");
             W.PlayerBox(c, Gfx.R(40, 330, 260, 190), PName(1), score[1].ToString(), C.Pink, over == 0 && cur == 2, Time, "Siege");
-            Gfx.Text(c, "Spalte klicken / Tasten 1-7", 170, 550, 17, C.Dim, Al.C, false);
+            Gfx.Text(c, Platform.Pick("Spalte klicken / Tasten 1-7", "Spalte antippen"), 170, 550, 17, C.Dim, Al.C, false);
             var frame = Gfx.R(BX - 16, BY - 6, Cols * CS + 32, Rows * CS + 30);
             Gfx.Shadow(c, frame, 26, 22, .55f, 0, 18);
             // Rueckwand: dunkler Schacht, durch die Loecher sichtbar

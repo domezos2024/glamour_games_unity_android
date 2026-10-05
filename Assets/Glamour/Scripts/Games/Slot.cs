@@ -271,7 +271,7 @@ namespace GlamourGames
             for (int r = 0; r < 5; r++) if (moving[r]) { moving[r] = false; pos[r] = re[r]; bump[r] = 0; }
             SetGrid();
             duel = VsCpu; duelLive = duelOver = turnLive = turnReady = false; gMode = gModeHuman;
-            if (!duel) { soloCredits = LoadCents(); msg = "Viel Glück! Leertaste = SPIN / STOPP"; return; }
+            if (!duel) { soloCredits = LoadCents(); msg = Platform.Pick("Viel Glück! Leertaste = SPIN / STOPP", "Viel Glück! SPIN antippen = drehen / stoppen"); return; }
             dCred[0] = dCred[1] = DuelStart; lbP[1] = 3; lnP[1] = 10; turnsDone = 0; turn = 0; lastBetP[0] = lastBetP[1] = 50;
             msg = $"Duell gegen den Computer ({Opponents.Label(Opp)}) - {DuelRounds} Runden";
             int g0 = gen;
@@ -701,7 +701,7 @@ namespace GlamourGames
             for (int i = 0; i < 12; i++) { using var ray = new Path2D(); float an = i * MathF.PI / 6, w = .09f; ray.MoveTo(0, -20); ray.LineTo(MathF.Cos(an - w) * 420, -20 + MathF.Sin(an - w) * 420); ray.LineTo(MathF.Cos(an + w) * 420, -20 + MathF.Sin(an + w) * 420); ray.Close(); var rp = Gfx.Fill(Col.White); rp.Shader = Grad.Radial(0, -20, 420, C.Gold.A(.22f * a), C.Gold.A(0)); rp.Additive = true; rp.Glow = 1.4f; c.DrawPath(ray, rp); }
             c.Restore();
             Gfx.Text(c, t, 0, -250, 84, C.Gold, Al.C, true, 24, true); c.Save(); c.RotateDegrees(MathF.Sin(ovT * 2) * 4); Gfx.Image(c, Assets.Img("slot_" + img), Gfx.Ctr(0, -20, 240, 240)); c.Restore();
-            Gfx.Text(c, s, 0, 150, 40, Col.White, Al.C, true, 6); Gfx.Text(c, CpuTurn ? $"{PName(1)} spielt ..." : "Klicken oder Leertaste zum Fortfahren", 0, 215, 22, C.Dim, Al.C, false); c.Restore();
+            Gfx.Text(c, s, 0, 150, 40, Col.White, Al.C, true, 6); Gfx.Text(c, CpuTurn ? $"{PName(1)} spielt ..." : Platform.Pick("Klicken oder Leertaste zum Fortfahren", "Antippen zum Fortfahren"), 0, 215, 22, C.Dim, Al.C, false); c.Restore();
         }
         void DrawPaytable(Canvas2D c)
         {

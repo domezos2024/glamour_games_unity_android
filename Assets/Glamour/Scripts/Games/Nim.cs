@@ -85,7 +85,7 @@ namespace GlamourGames
         {
             W.PlayerBox(c, Gfx.R(40, 140, 260, 200), PName(0), score[0].ToString(), C.Cyan, !over && cur == 1, Time, "Siege");
             W.PlayerBox(c, Gfx.R(40, 370, 260, 200), PName(1), score[1].ToString(), C.Pink, !over && cur == 2, Time, "Siege");
-            Gfx.Text(c, "Klicke einen Stab: er und alle darüber werden genommen.", 800, 120, 26, C.Dim, Al.C, false);
+            Gfx.Text(c, Platform.Pick("Klicke einen Stab: er und alle darüber werden genommen.", "Tippe einen Stab: er und alle darüber werden genommen."), 800, 120, 26, C.Dim, Al.C, false);
             for (int p = 0; p < 3; p++)
             {
                 float x = PX(p); var plate = Gfx.Ctr(x, BASE + 30, RW + 60, 30);

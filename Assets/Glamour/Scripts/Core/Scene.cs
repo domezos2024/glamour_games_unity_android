@@ -214,10 +214,70 @@ namespace GlamourGames
         public float T; public float W = 760, H = 420; public float CY => Input ? 131 : 450;
         public List<string> Lines = new List<string>();
         public Action<Canvas2D, Box> Extra;
+        // Bildschirmtastatur (Touch-Geraete): QWERTZ mit Umlauten, Umschalter, Loeschen und Leerzeichen
+        readonly List<Button> keys = new List<Button>(), pickList = new List<Button>(); bool keysBuilt, shift = true; Button shiftKey, backKey, spaceKey;
+        public bool Keyboard => Input && Platform.VirtualKeyboard;
+        static readonly string[] KeyRows = { "1234567890-", "QWERTZUIOPÜ", "ASDFGHJKLÖÄ", "YXCVBNM_" };
+        const float KeyW = 108, KeyH = 88, KeyGap = 8, KeyX0 = 166, KeyY0 = 312, KeyRowStep = 96;
         /// <summary>Wenn gesetzt: eigene Button-Anordnung statt einer Reihe.</summary>
         public Action<Modal> CustomLayout;
-        public void Update(float dt) { T += dt; foreach (var b in Btns.ToList()) b.Update(dt, b == hot, b == down); }
+        public void Update(float dt)
+        {
+            T += dt; foreach (var b in Btns.ToList()) b.Update(dt, b == hot, b == down);
+            if (Keyboard) { BuildKeys(); for (int i = 0; i < keys.Count; i++) keys[i].Update(dt, keys[i] == hot, keys[i] == down); }
+        }
+
+        void BuildKeys()
+        {
+            if (keysBuilt) return; keysBuilt = true;
+            foreach (var row in KeyRows)
+                foreach (char ch in row) { char c0 = ch; keys.Add(new Button { Col = char.IsLetter(c0) ? C.Blue : C.Purple, Size = 40, Text = c0.ToString(), Click = () => Type(c0) }); }
+            shiftKey = new Button { Col = C.Gold, Click = () => shift = !shift };
+            shiftKey.Custom = (c, r, h) =>
+            {
+                float x0 = r.MidX, y0 = r.MidY;
+                using (var p = new Path2D())
+                {
+                    p.MoveTo(x0, y0 - 22); p.LineTo(x0 + 24, y0 + 2); p.LineTo(x0 + 10, y0 + 2); p.LineTo(x0 + 10, y0 + 20); p.LineTo(x0 - 10, y0 + 20); p.LineTo(x0 - 10, y0 + 2); p.LineTo(x0 - 24, y0 + 2); p.Close();
+                    if (shift) c.DrawPath(p, Gfx.Fill(Col.White)); else c.DrawPath(p, Gfx.Line(Col.White, 3.5f));
+                }
+                return true;
+            };
+            backKey = new Button { Col = C.Red, Click = () => { Back(); if (Text.Length == 0) shift = true; } };
+            backKey.Custom = (c, r, h) =>
+            {
+                float x0 = r.MidX, y0 = r.MidY;
+                using (var p = new Path2D()) { p.MoveTo(x0 - 30, y0); p.LineTo(x0 - 12, y0 - 20); p.LineTo(x0 + 28, y0 - 20); p.LineTo(x0 + 28, y0 + 20); p.LineTo(x0 - 12, y0 + 20); p.Close(); c.DrawPath(p, Gfx.Line(Col.White, 3.5f)); }
+                c.DrawLine(x0 - 6, y0 - 9, x0 + 14, y0 + 9, Gfx.Line(Col.White, 3.5f)); c.DrawLine(x0 + 14, y0 - 9, x0 - 6, y0 + 9, Gfx.Line(Col.White, 3.5f));
+                return true;
+            };
+            spaceKey = new Button { Col = C.Dim, Text = "Leerzeichen", Size = 30, Click = () => { Char(' '); shift = true; } };
+            keys.Add(shiftKey); keys.Add(backKey); keys.Add(spaceKey);
+        }
+        void Type(char c0)
+        {
+            char ch = Keep && !shift && char.IsLetter(c0) ? char.ToLowerInvariant(c0) : c0; int before = Text.Length;
+            Char(ch); if (Text.Length > before && char.IsLetter(c0)) shift = false;
+        }
+        void LayoutKeys()
+        {
+            BuildKeys(); int i = 0;
+            for (int r = 0; r < 3; r++) foreach (char ch in KeyRows[r]) { keys[i].R = Gfx.R(KeyX0 + (i - Offs(r)) * (KeyW + KeyGap), KeyY0 + r * KeyRowStep, KeyW, KeyH); i++; }
+            float u = KeyW + KeyGap, y3 = KeyY0 + 3 * KeyRowStep, wide = 1.5f * u - KeyGap;
+            shiftKey.R = Gfx.R(KeyX0, y3, wide, KeyH); backKey.R = Gfx.R(KeyX0 + wide + KeyGap + 8 * u, y3, 11 * u - KeyGap - wide - KeyGap - 8 * u, KeyH);
+            for (int k = 0; k < KeyRows[3].Length; k++) { keys[i].R = Gfx.R(KeyX0 + wide + KeyGap + k * u, y3, KeyW, KeyH); i++; }
+            spaceKey.R = Gfx.R(800 - 350, KeyY0 + 4 * KeyRowStep, 700, KeyH);
+            bool up = !Keep || shift; i = 0;
+            foreach (var row in KeyRows) foreach (char ch in row) { keys[i].Text = char.IsLetter(ch) && !up ? char.ToLowerInvariant(ch).ToString() : ch.ToString(); i++; }
+            shiftKey.Selected = shift;
+        }
+        static int Offs(int row) { int n = 0; for (int r = 0; r < row; r++) n += KeyRows[r].Length; return n; }
+
         void Layout()
+        {
+            LayoutBtns(); if (Keyboard) LayoutKeys();
+        }
+        void LayoutBtns()
         {
             if (CustomLayout != null) { CustomLayout(this); return; }
             float n = Btns.Count, bw = Math.Min(260, (W - 60 - (n - 1) * 20) / Math.Max(1, n)), x0 = 800 - (n * bw + (n - 1) * 20) / 2, y = CY + H / 2 - (Input ? 78 : 100);
@@ -246,6 +306,13 @@ namespace GlamourGames
             Extra?.Invoke(c, r);
             foreach (var b in Btns.ToList()) b.Draw(c);
             c.Restore();
+            if (Keyboard)
+            {
+                c.SaveLayer(a);
+                var kb = Gfx.R(KeyX0 - 28, KeyY0 - 16, 11 * (KeyW + KeyGap) - KeyGap + 56, 5 * KeyRowStep + 24); Gfx.Rect(c, kb, 26, Col.Black.A(.6f)); GlamourGames.W.Panel(c, kb, Col, 26);
+                for (int i = 0; i < keys.Count; i++) keys[i].Draw(c);
+                c.Restore();
+            }
         }
         void DrawWin(Canvas2D c, Box r, float a)
         {
@@ -258,8 +325,13 @@ namespace GlamourGames
             c.Save(); c.Translate(800, r.Top + 70); Metal.Text(c, Title, 54, Col, 1, T > .6f ? ((T - .6f) % 3.2f) / 1.3f : -1); c.Restore();
         }
         public Box FieldRect => Gfx.Ctr(800, CY - H / 2 + 150, 380, 62);
-        public bool AnyHover => Btns.Any(b => b.Hov.V > .3f);
-        public void Move(float x, float y) { Layout(); hot = Button.Pick(Btns, x, y); }
+        public bool AnyHover => Btns.Any(b => b.Hov.V > .3f) || (Keyboard && keys.Any(b => b.Hov.V > .3f));
+        public void Move(float x, float y)
+        {
+            Layout();
+            if (!Keyboard) { hot = Button.Pick(Btns, x, y); return; }
+            pickList.Clear(); pickList.AddRange(Btns); pickList.AddRange(keys); hot = Button.Pick(pickList, x, y);
+        }
         public void MDown(float x, float y) { Move(x, y); down = hot; }
         public void MUp(float x, float y) { Move(x, y); var d = down; down = null; if (d != null && d == hot) { Sfx.Play(S.Click, .6f); Haptics.Tap(); d.Click?.Invoke(); } }
         public void Char(char ch) { if (Input && Text.Length < Max && (char.IsLetterOrDigit(ch) || ch == '-' || ch == '_' || (ch == ' ' && Text.Length > 0))) Text += Keep ? ch : char.ToUpperInvariant(ch); }

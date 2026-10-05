@@ -152,7 +152,7 @@ namespace GlamourGames
             DrawSnake(c, body, prev, dir, C.Green, new Col(0, 120, 90), fade1);
             if (!started && !dead)
             {
-                Gfx.Rect(c, Gfx.Ctr(800, 460, 640, Duel ? 170 : 130), 24, Col.Black.A(.6f)); Gfx.Text(c, "Pfeiltasten / WASD oder Kreuz", 800, 435, 34, Col.White, Al.C, true, 6); Gfx.Text(c, "Leertaste = Start / Pause", 800, 485, 26, C.Dim, Al.C, false);
+                Gfx.Rect(c, Gfx.Ctr(800, 460, 640, Duel ? 170 : 130), 24, Col.Black.A(.6f)); Gfx.Text(c, Platform.Pick("Pfeiltasten / WASD oder Kreuz", "Wischen oder Steuerkreuz"), 800, 435, 34, Col.White, Al.C, true, 6); Gfx.Text(c, "Leertaste = Start / Pause", 800, 485, 26, C.Dim, Al.C, false);
                 if (Duel) Gfx.Text(c, "Duell: Wer zuerst crasht, verliert!", 800, 525, 24, C.Pink.Light(.3f), Al.C, true, 4);
             }
             else if (!running && !dead) Gfx.Text(c, "PAUSE", 800, 460, 80, C.Yellow, Al.C, true, 20);

@@ -36,7 +36,7 @@ namespace GlamourGames
             main.cullingMask &= ~(1 << Layer);
 
             mesh = BuildMesh(); normalTex = BuildNormalMap();
-            rt = new RenderTexture(Cols * TilePx, Rows * TilePx, 24, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB) { name = "GlamourDiceRT", antiAliasing = 8, useMipMap = false, filterMode = FilterMode.Bilinear };
+            rt = new RenderTexture(Cols * TilePx, Rows * TilePx, 24, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB) { name = "GlamourDiceRT", antiAliasing = Platform.Touch ? 4 : 8, useMipMap = false, filterMode = FilterMode.Bilinear };
             rt.Create();
             shapeMat.SetTexture("_DiceTex", rt);
 
@@ -130,7 +130,7 @@ namespace GlamourGames
             if (trayRt == null || trayRt.width != w || trayRt.height != h || !trayRt.IsCreated())
             {
                 if (trayRt != null) { trayCam.targetTexture = null; trayRt.Release(); UnityEngine.Object.Destroy(trayRt); }
-                trayRt = new RenderTexture(w, h, 24, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB) { name = "GlamourTrayRT", antiAliasing = 8 };
+                trayRt = new RenderTexture(w, h, 24, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB) { name = "GlamourTrayRT", antiAliasing = Platform.Touch ? 4 : 8 };
                 trayRt.Create(); trayCam.targetTexture = trayRt; shapeMat.SetTexture("_TrayTex", trayRt);
             }
             // Tele-Perspektive (wenig Verzerrung, filmischer Blick schraeg von oben); Bildmitte = Mitte von 'view'

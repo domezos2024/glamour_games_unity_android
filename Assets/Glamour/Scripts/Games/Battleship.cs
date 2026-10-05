@@ -185,7 +185,7 @@ namespace GlamourGames
             var r = Gfx.Ctr(800, 450, 900, 420); Gfx.Glow(c, r, 30, C.Cyan, 26, .5f); W.Panel(c, r, C.Cyan, 30);
             Gfx.Text(c, PName(passTo), 800, 330, 84, passTo == 0 ? C.Cyan : C.Pink, Al.C, true, 24, true);
             Gfx.Text(c, "Platz tauschen - der andere Spieler schaut weg!", 800, 430, 30, Col.White, Al.C, false);
-            Gfx.Text(c, "Erst wenn du bereit bist, auf \"Bereit\" klicken.", 800, 480, 24, C.Dim, Al.C, false);
+            Gfx.Text(c, Platform.Pick("Erst wenn du bereit bist, auf \"Bereit\" klicken.", "Erst wenn du bereit bist, auf \"Bereit\" tippen."), 800, 480, 24, C.Dim, Al.C, false);
         }
         void Water(Canvas2D c, float gx, float gy, float s, bool labels)
         {
@@ -248,7 +248,7 @@ namespace GlamourGames
             }
             Gfx.Text(c, $"Flotte von {PName(cur)}", 1230, 158, 28, cur == 0 ? C.Cyan : C.Pink, Al.C, true, 8);
             for (int i = 0; i < shipBtns.Count; i++) { shipBtns[i].Selected = sel == i; shipBtns[i].Col = fleet[cur][i].Cells.Count > 0 ? C.Green : C.Cyan; }
-            Gfx.Text(c, sel >= 0 ? $"Ausgewählt: {fleet[cur][sel].Name} - {(horiz ? "waagerecht" : "senkrecht")}" : "Wähle ein Schiff (oder klicke ein platziertes zum Verschieben)", 1230, 528, 20, C.Dim, Al.C, false);
+            Gfx.Text(c, sel >= 0 ? $"Ausgewählt: {fleet[cur][sel].Name} - {(horiz ? "waagerecht" : "senkrecht")}" : Platform.Pick("Wähle ein Schiff (oder klicke ein platziertes zum Verschieben)", "Wähle ein Schiff (oder tippe ein platziertes zum Verschieben)"), 1230, 528, 20, C.Dim, Al.C, false);
         }
         void Crosshair(Canvas2D c, float x, float y, Col col, float a)
         {

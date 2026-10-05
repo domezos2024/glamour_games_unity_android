@@ -173,7 +173,7 @@ namespace GlamourGames
             Gfx.RectRadial(c, felt, 22, felt.MidX, felt.MidY - 40, 470, new Col(22, 106, 68), new Col(5, 32, 22));
             Gfx.Stroke(c, felt, 22, Col.Black.A(.5f), 3); Gfx.Stroke(c, Gfx.Inflate(felt, -6), 18, C.Green.A(.28f), 2);
             Gfx.Light(c, felt.MidX, felt.MidY - 50, 380, new Col(255, 240, 200), .06f, 1.2f);
-            Gfx.Text(c, CpuTurn ? "Der Computer ist am Zug ..." : selRow >= 0 ? "Zeile anklicken = abwählen, grüner Knopf = eintragen" : "Klicke auf Würfel oder Tasten 1-5, um sie zu halten  -  Leertaste würfelt", 430, 560, 22, CpuTurn ? C.Pink.Light(.4f) : C.Dim, Al.C, false);
+            Gfx.Text(c, CpuTurn ? "Der Computer ist am Zug ..." : selRow >= 0 ? Platform.Pick("Zeile anklicken = abwählen, grüner Knopf = eintragen", "Zeile antippen = abwählen, grüner Knopf = eintragen") : Platform.Pick("Klicke auf Würfel oder Tasten 1-5, um sie zu halten  -  Leertaste würfelt", "Tippe auf Würfel, um sie zu halten"), 430, 560, 22, CpuTurn ? C.Pink.Light(.4f) : C.Dim, Al.C, false);
             if (Physical)
             {
                 var arr = new Die3D.TrayDie[5];
