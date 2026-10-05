@@ -26,7 +26,7 @@ namespace GlamourGames
         /// </summary>
         /// <summary>Automatische Screenshots (--skip=N): 1 = Gegnerwahl ueberspringen, 2 = zusaetzlich Muenzwurf.</summary>
         public static int Skip;
-        public static void Pick(Scene s, string key, Action<Opponent> done, string humanLabel = "2 Spieler", string humanSub = "an einem PC", string title = "Gegner wählen")
+        public static void Pick(Scene s, string key, Action<Opponent> done, string humanLabel = "2 Spieler", string humanSub = null, string title = "Gegner wählen")
         {
             var last = Load(key);
             if (Skip > 0) { done(last); return; }
@@ -39,7 +39,7 @@ namespace GlamourGames
                 b.Click = () => { Store(key, o); s.Opp = o; s.Modal = null; done(o); };
                 m.Btns.Add(b);
             }
-            Add(Opponent.Human, humanLabel, humanSub, C.Cyan);
+            Add(Opponent.Human, humanLabel, humanSub ?? Platform.Pick("an einem PC", "an einem Gerät"), C.Cyan);
             Add(Opponent.Easy, "Computer", "Leicht", C.Green);
             Add(Opponent.Medium, "Computer", "Mittel", C.Gold);
             Add(Opponent.Hard, "Computer", "Schwer", C.Red);
@@ -75,7 +75,7 @@ namespace GlamourGames
         }
 
         /// <summary>Fuegt einen Button "Gegner: ..." hinzu, der die Auswahl erneut oeffnet und dann restart aufruft.</summary>
-        public static Button AddSwitch(Scene s, string key, float x, float y, float w, float h, Action restart, string humanLabel = "2 Spieler", string humanSub = "an einem PC")
+        public static Button AddSwitch(Scene s, string key, float x, float y, float w, float h, Action restart, string humanLabel = "2 Spieler", string humanSub = null)
         {
             Button b = null;
             b = s.Ui.Add(new Button(x, y, w, h, "", C.Cyan, () => Pick(s, key, o => { s.Opp = o; restart(); }, humanLabel, humanSub), 20));

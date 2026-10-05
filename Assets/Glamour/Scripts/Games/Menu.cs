@@ -67,7 +67,7 @@ namespace GlamourGames
                 p.Shader = Grad.Linear(-w / 2 + sw, -40, w / 2 + sw, 40, new Col(255, 250, 200), C.Orange); Gfx.TextPaint(c, t, 0, 0, 96, p, Al.C, true, true);
             }
             c.Restore();
-            Gfx.Text(c, "10 Spiele  ·  zu zweit oder gegen den Computer  ·  Zifferntasten starten direkt", 800, 168, 22, C.Dim, Al.C, false);
+            Gfx.Text(c, Platform.Pick("10 Spiele  ·  zu zweit oder gegen den Computer  ·  Zifferntasten starten direkt", "10 Spiele  ·  zu zweit oder gegen den Computer  ·  Kachel antippen zum Starten"), 800, 168, 22, C.Dim, Al.C, false);
             for (int i = 0; i < 10; i++)
             {
                 float a = Ease.OutCubic((intro - .15f - i * .05f) / .45f); if (a <= 0) continue;
