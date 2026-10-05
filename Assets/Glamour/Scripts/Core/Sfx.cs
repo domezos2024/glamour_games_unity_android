@@ -34,7 +34,9 @@ namespace GlamourGames
             voices = new AudioSource[28];
             for (int i = 0; i < voices.Length; i++) { var s = host.AddComponent<AudioSource>(); s.playOnAwake = false; s.spatialBlend = 0; voices[i] = s; }
             music = host.AddComponent<AudioSource>(); music.loop = true; music.playOnAwake = false; music.spatialBlend = 0; music.priority = 0;
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             try { Build(); } catch (Exception e) { Log.I("sfx build " + e.Message); }
+            Log.I($"Effekt-Bank erzeugt in {sw.ElapsedMilliseconds} ms");
             StartMusic();
         }
 
