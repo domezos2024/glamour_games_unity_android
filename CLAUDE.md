@@ -22,3 +22,6 @@
 - Echter Test PC <-> Pixel: PC `MB-CUBE` (90:7A:DA:0D:6A:C0) ist gekoppelt; Windows-App per `--click=`/`--press=` steuern, Handy per `adb shell input tap` (Massstab 1,2, Versatz x 338,5). Player.log vor dem Start loeschen, sonst liest man alte Eintraege.
 - Hintergrund-Jobs (httpListener `job_start`) laufen mit eigenem adb-Server: Tap-Design/Get-View dort nicht nutzbar.
 - Beide Repos gleich halten: Skripte nach `glamour_games_unity` (Windows) kopieren.
+- Muenzwurf im Bluetooth-Spiel: der Beitretende (Gast) waehlt per Knopf und wirft (`toss|wahl|ergebnis`), der Eroeffner sieht Wahl und denselben Wurf. Namen: `Link.MyName` = Optionsname, sonst Bluetooth-Name des Geraets (sonst hiessen beide "Spieler 1").
+- Beitrittsliste zeigt nur PCs/Handys mit Adress-Kurzform; gruen = Geraet bietet den Glamour-Dienst an (Android: `getUuids`, Auffrischen per `fetchUuidsWithSdp`). Veraltete gleichnamige Kopplungen (z. B. `MB_CUBE` ...7D:02) fuehren sonst zu PAGE_TIMEOUT.
+- Vorschau: `--scene=lobby` zeigt die Bluetooth-Seite mit Testgeraeten; mit `--net=` wartet die Vorschau vor dem Szenenstart auf die Verbindung.
