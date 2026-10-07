@@ -13,7 +13,9 @@ namespace GlamourGames
         public override Pt ThinkPos => new Pt(PX[1], 612);
         class Card { public string Rank; public int Suit; public float X, Y, SX, SY, T, Lift; public Spring Flip = new Spring(0) { K = 170, D = 20 }; public bool Up; public float Rot; public Glide G; }
         // Karte 63 mm breit -> rund 1750 px/m; Gleitreibung Karte auf Filz ~0,3
-        static readonly float Gk = Phys.Gpx(1750); readonly ChipStack[] stacks = { new ChipStack(), new ChipStack() };
+        static readonly float Gk = Phys.Gpx(1750);
+        // Kartenschlitten: Stapelhoehe folgt dem Vorrat, nach jeder gezogenen Karte schiebt das Gleitgewicht den Stapel federnd nach vorn
+        float shoeT = -9; readonly ChipStack[] stacks = { new ChipStack(), new ChipStack() };
         class Hand { public List<Card> Cards = new List<Card>(); public string Status = "waiting", Result; public long Bet = 10, Credits = 1000; public bool Doubled; }
         readonly Hand[] pl = { new Hand(), new Hand() }; readonly List<Card> dealer = new List<Card>(); bool revealed; string phase = "betting"; int turn = -1; List<(string r, int s)> shoe = new List<(string, int)>(); string msg = "";
         Button bDeal, bHit, bStand, bDouble, bRefill, bNew, oppBtn; readonly Button[] bm = new Button[2], bp = new Button[2];
@@ -59,7 +61,7 @@ namespace GlamourGames
         void BuildShoe() { shoe.Clear(); for (int d = 0; d < 4; d++) for (int s = 0; s < 4; s++) foreach (var r in CardArt.Ranks) shoe.Add((r, s)); Rng.Shuffle(shoe); }
         IEnumerator<object> DealTo(List<Card> hand, bool up)
         {
-            var (r, s) = shoe[shoe.Count - 1]; shoe.RemoveAt(shoe.Count - 1); var c = new Card { Rank = r, Suit = s, X = Shoe.X, Y = Shoe.Y, SX = Shoe.X, SY = Shoe.Y, Up = up, Rot = 20 }; hand.Add(c); c.Flip.Target = up ? 1 : 0; Sfx.Play(S.Deal); yield return .34f;
+            var (r, s) = shoe[shoe.Count - 1]; shoe.RemoveAt(shoe.Count - 1); var c = new Card { Rank = r, Suit = s, X = Shoe.X, Y = Shoe.Y, SX = Shoe.X, SY = Shoe.Y, Up = up, Rot = 20 }; hand.Add(c); c.Flip.Target = up ? 1 : 0; Sfx.Play(S.Deal); shoeT = Time; yield return .34f;
         }
         void HumanDeal() { if (VsCpu && !cpuBetDone) return; Co.Start(Deal()); }
         IEnumerator<object> Deal()
@@ -194,7 +196,9 @@ namespace GlamourGames
             var rim = Gfx.Line(C.Gold.A(.6f), 3); rim.Glow = 1.5f; c.DrawRoundRect(felt, 270, 270, rim); Gfx.Stroke(c, Gfx.Inflate(felt, -18), 252, C.Gold.A(.22f), 2);
             Gfx.Text(c, "BLACKJACK PAYS 3 : 2", 800, 440, 40, C.Gold.A(.5f), Al.C, true, 0, true); Gfx.Text(c, "Bank zieht bis 17 und bleibt bei 17", 800, 480, 20, Col.White.A(.35f), Al.C, false);
             Gfx.Text(c, msg, 800, 100, 24, C.Yellow.Light(.3f), Al.C, true, 6);
-            Gfx.Shadow(c, Gfx.Ctr(Shoe.X, Shoe.Y, 120, 160), 12, 10, .5f, 4, 8); for (int k = 0; k < 4; k++) CardArt.Card(c, Shoe.X + k * 2, Shoe.Y - k * 2, 110, "", 0, 0, 0);
+            Gfx.Shadow(c, Gfx.Ctr(Shoe.X, Shoe.Y, 120, 160), 12, 10, .5f, 4, 8);
+            int layers = shoe.Count == 0 ? 0 : 1 + shoe.Count / 24; float push = Phys.Ring(-70, Time - shoeT, 3.2f, .5f);
+            for (int k = layers - 1; k >= 0; k--) CardArt.Card(c, Shoe.X + k * 2.2f + (k == 0 ? 0 : push * k / layers), Shoe.Y - k * 1.6f, 110, "", 0, 0, 0);
             Gfx.Text(c, $"{shoe.Count} Karten", Shoe.X, Shoe.Y + 110, 18, C.Dim, Al.C, false);
             Gfx.Text(c, "BANK", 800, DY - 100, 22, C.Dim, Al.C, true, 4); DrawHand(c, dealer, -1);
             for (int i = 0; i < 2; i++) DrawPlayer(c, i);

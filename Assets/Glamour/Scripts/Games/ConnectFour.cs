@@ -16,6 +16,8 @@ namespace GlamourGames
         const float PxPerM = 2800, Gc = Phys.G * PxPerM, Restit = .3f;
         class Disc { public int Col, Row, P; public float Y, Vy; public bool Settled, Landed_; public float Pulse, HitT = -9, HitV, PushT = -9, PushV, Side; }
         readonly List<Body> outgoing = new List<Body>();
+        // Auffangrampe unter dem Brett: herausfallende Steine prallen auf, rollen die Schraege hinab und aus dem Bild
+        const float RampX0 = BX - 60, RampY0 = BY + Rows * CS + 48, RampX1 = BX + Cols * CS + 420, RampY1 = RampY0 + 70;
         int[] b = new int[42]; readonly List<Disc> discs = new List<Disc>(); int cur = 1, over; int[] score = new int[2]; List<int> winCells; float winT; bool busy; int hoverCol = -1; string status = "";
         static float CX(int c) => BX + c * CS + CS / 2; static float CY(int r) => BY + r * CS + CS / 2;
         // Computer-Gegner: Suche laeuft im Hintergrund (Task), Ergebnis wird in Update abgeholt
@@ -32,7 +34,7 @@ namespace GlamourGames
         void ReleaseDiscs()
         {
             if (discs.Count == 0) return;
-            foreach (var d in discs) outgoing.Add(new Body { X = CX(d.Col), Y = d.Y, R = CS * .4f, Vx = (Rng.F() - .5f) * 60, Gravity = Gc, Tag = d.P });
+            foreach (var d in discs) outgoing.Add(new Body { X = CX(d.Col), Y = d.Y, R = CS * .4f, Vx = (Rng.F() - .5f) * 60, Gravity = Gc, E = .35f, Mu = .5f, Tag = d.P }.Ramp(RampX0, RampY0, RampX1, RampY1));
             Sfx.Play(S.Drop, .6f, .7f); Sfx.Play(S.Creak, .4f, 1.4f); Log.I($"bodenklappe: {discs.Count} Steine");
         }
         void NextRound() { starter = 3 - starter; Reset(); }
@@ -91,7 +93,7 @@ namespace GlamourGames
         }
         void Landed(Disc d)
         {
-            Sfx.Play(S.Drop); Fx.Spark(CX(d.Col), CY(d.Row) + CS / 2 - 8, d.P == 1 ? C.Cyan : C.Pink, 10, 180);
+            Fx.Spark(CX(d.Col), CY(d.Row) + CS / 2 - 8, d.P == 1 ? C.Cyan : C.Pink, 10, 180);
             var w = Check(d.Row, d.Col, d.P); int g = gen;
             if (w != null)
             {
@@ -139,12 +141,13 @@ namespace GlamourGames
                     // Aufprall auf Stein/Boden darunter: Restitution, seitliches Klappern im Schacht, Stoss geht in die Steine darunter
                     d.Y = ty; float v = d.Vy; d.HitT = Time; d.HitV = v; d.Side = Rng.F() < .5f ? -1 : 1;
                     foreach (var o in discs) if (o != d && o.Col == d.Col && o.Row > d.Row) { o.PushT = Time; o.PushV = v * .35f / (o.Row - d.Row); }
-                    if (d.Landed_) Sfx.Play(S.Drop, Math.Min(.5f, v / 6000), 1.25f);
+                    Impact.Play(Mat.Plastic, v / 7000f);
                     if (v > 500) { d.Vy = -v * Restit; if (!d.Landed_) { d.Landed_ = true; Landed(d); } }
                     else { d.Vy = 0; d.Settled = true; if (!d.Landed_) { d.Landed_ = true; Landed(d); } }
                 }
             }
-            for (int i = outgoing.Count - 1; i >= 0; i--) { outgoing[i].Update(dt); if (outgoing[i].Y > App.VY1 + CS) outgoing.RemoveAt(i); }
+            for (int i = 0; i < outgoing.Count; i++) { outgoing[i].Update(dt); for (int j = 0; j < i; j++) Body.Collide(outgoing[j], outgoing[i]); if (outgoing[i].Impact > 200) Impact.Play(Mat.Plastic, outgoing[i].Impact / 7000f); }
+            outgoing.RemoveAll(o => o.Y > App.VY1 + CS || o.X > App.VX1 + CS);
             if (winCells != null) winT += dt;
             CpuUpdate(dt);
         }
@@ -165,6 +168,7 @@ namespace GlamourGames
                 Gfx.Disc(c, CX(hoverCol), BY - CS * .55f + MathF.Sin(Time * 6) * 4, CS * .4f, col);
             }
             if (cpuCol >= 0 && CpuTurn && !busy) DrawCpuHover(c);
+            if (outgoing.Count > 0) { var rail = Gfx.Line(new Col(140, 180, 255).A(.8f), 6); rail.Glow = 1.4f; c.DrawLine(RampX0, RampY0, RampX1, RampY1, rail); }
             foreach (var o in outgoing) DrawDisc(c, o.X, o.Y, (int)o.Tag);
             foreach (var d in discs) DrawDisc(c, d, Time);
             Gfx.Glow(c, frame, 26, C.Blue, 22, .5f);

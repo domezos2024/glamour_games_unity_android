@@ -16,7 +16,7 @@ namespace GlamourGames
             if (n < shown || n <= 0) { shown = Math.Max(0, n); from = shown; }
             if (n > shown) { from = shown; shown = n; t0 = now; hops = 0; }
             float h = Phys.Drop(now - t0, H0, Gc, Rest, out int hp);
-            if (hp > hops) { Sfx.Play(S.Chip, MathF.Pow(Rest, hops) * .8f, 1 + hops * .15f); hops = hp; }
+            if (hp > hops) { Impact.Play(Mat.Clay, MathF.Pow(Rest, hops)); hops = hp; }
             if (now - t0 > 1.5f || from >= n) { Chip3D.Stack(c, x, y, r, n, a, b); return; }
             if (from > 0) Chip3D.Stack(c, x, y, r, from, a, b);
             bool odd = from % 2 == 1; Chip3D.Stack(c, x, y - from * r * .23f - h, r, n - from, odd ? b : a, odd ? a : b);

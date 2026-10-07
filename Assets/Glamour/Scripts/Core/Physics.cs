@@ -35,6 +35,35 @@ namespace GlamourGames
         }
     }
 
+    /// <summary>Werkstoffe fuer Aufprallgeraeusche.</summary>
+    public enum Mat { Plastic, Wood, Metal, Clay, Paper, Dice }
+
+    /// <summary>
+    /// Aufprallgeraeusch nach Werkstoff und Staerke: Lautstaerke waechst mit der Aufprallgeschwindigkeit (gesaettigt),
+    /// harte Stoesse klingen etwas heller; schwere/grosse Koerper tiefer. Zu leise Stoesse werden verschluckt.
+    /// </summary>
+    public static class Impact
+    {
+        static float lastT; static int burst;
+        /// <summary>strength = Aufprallgeschwindigkeit relativ zu einem "kraeftigen" Stoss (1 = kraeftig), size = Groessenfaktor (1 normal, &gt;1 tiefer).</summary>
+        public static void Play(Mat m, float strength, float size = 1)
+        {
+            if (strength < .06f) return;
+            // Begrenzung: hoechstens ~12 Klacks in kurzer Folge (viele Koerper gleichzeitig)
+            float now = UnityEngine.Time.realtimeSinceStartup; if (now - lastT < .015f) { if (++burst > 3) return; } else burst = 0; lastT = now;
+            float s = Math.Clamp(strength, 0, 1.4f), vol = Math.Min(1, .15f + .85f * MathF.Sqrt(s)), pitch = (1 + .18f * (s - .5f)) / MathF.Sqrt(Math.Max(.3f, size));
+            switch (m)
+            {
+                case Mat.Plastic: Sfx.Play(S.Drop, vol * .55f, pitch * 1.25f); break;
+                case Mat.Wood: Sfx.Play(S.Drop, vol * .5f, pitch * .85f); Sfx.Play(S.Tick, vol * .25f, pitch * .7f); break;
+                case Mat.Metal: Sfx.Play(S.Coin, vol * .5f, pitch * 1.1f); if (size > 1.5f) Sfx.Play(S.Gong, vol * .45f, pitch * 1.2f); break;
+                case Mat.Clay: Sfx.Play(S.Chip, vol * .7f, pitch); break;
+                case Mat.Paper: Sfx.Play(S.Deal, vol * .35f, pitch * 1.1f); break;
+                case Mat.Dice: Sfx.Play(S.Dice, vol * .45f, pitch * 1.15f); break;
+            }
+        }
+    }
+
     /// <summary>
     /// Starrkoerper (Masse 1) als Kreisscheibe (R &gt; 0) oder Rechteck (Hw/Hh). Stoesse an Boden und Waenden mit
     /// Restitution und Coulomb-Reibung am Kontaktpunkt (koppelt Translation und Drehung: Aufkanten, Abrollen, Ausrutschen),
@@ -50,6 +79,14 @@ namespace GlamourGames
         /// <summary>Wie lange der Koerper schon praktisch ruht (s).</summary>
         public float Still;
         public object Tag;
+        /// <summary>Schraege Flaechen (Rampen) als Strecken; Kontakt nur innerhalb ihrer x-Spanne.</summary>
+        readonly List<(float nx, float ny, float d, float x0, float x1)> ramps = new List<(float, float, float, float, float)>();
+        /// <summary>Rampe von (x0,y0) nach (x1,y1), begehbar von oben.</summary>
+        public Body Ramp(float x0, float y0, float x1, float y1)
+        {
+            float dx = x1 - x0, dy = y1 - y0, l = MathF.Sqrt(dx * dx + dy * dy), nx = dy / l, ny = -dx / l; if (ny > 0) { nx = -nx; ny = -ny; }
+            ramps.Add((nx, ny, nx * x0 + ny * y0, Math.Min(x0, x1), Math.Max(x0, x1))); return this;
+        }
         float InvI => R > 0 ? 2 / (R * R) : 3 / Math.Max(1, Hw * Hw + Hh * Hh);
         public bool Resting => Still > .25f;
 
@@ -61,25 +98,26 @@ namespace GlamourGames
                 Vy += Gravity * h;
                 if (Drag > 0) { float v = MathF.Sqrt(Vx * Vx + Vy * Vy), k = 1 / (1 + Drag * v * h); Vx *= k; Vy *= k; W *= 1 / (1 + Drag * MathF.Abs(W) * h * 40); }
                 X += Vx * h; Y += Vy * h; A += W * h;
-                if (!float.IsNaN(Floor)) Contacts(0, -1, Floor);
+                if (!float.IsNaN(Floor)) Contacts(0, -1, -Floor);
                 if (!float.IsNaN(WallL)) Contacts(1, 0, WallL);
-                if (!float.IsNaN(WallR)) Contacts(-1, 0, WallR);
+                if (!float.IsNaN(WallR)) Contacts(-1, 0, -WallR);
+                foreach (var r in ramps) Contacts(r.nx, r.ny, r.d, r.x0, r.x1, (R > 0 ? R : Math.Max(Hw, Hh)) + 30);
             }
             Still = Vx * Vx + Vy * Vy < 400 && MathF.Abs(W) < .3f ? Still + dt : 0;
         }
 
-        /// <summary>Kontakte mit der Ebene {p : p·n = d·n} (n zeigt aus der Ebene heraus); mehrere Ecken werden iterativ aufgeloest.</summary>
-        void Contacts(float nx, float ny, float plane)
+        /// <summary>Kontakte mit der Ebene {p : p·n = d} (n zeigt in den freien Raum), optional nur fuer Kontaktpunkte mit x in [x0, x1]; mehrere Ecken werden iterativ aufgeloest.</summary>
+        void Contacts(float nx, float ny, float d, float x0 = float.NegativeInfinity, float x1 = float.PositiveInfinity, float lim = float.PositiveInfinity)
         {
-            float d = nx != 0 ? plane * nx : plane * ny; int m = 0; float maxPen = 0;
-            if (R > 0) { cr[0] = -nx * R; cr[1] = -ny * R; m = 1; maxPen = d - (X * nx + Y * ny - R); }
+            int m = 0; float maxPen = 0;
+            if (R > 0) { cr[0] = -nx * R; cr[1] = -ny * R; float cx = X + cr[0]; float pc = d - (X * nx + Y * ny - R); if (cx >= x0 && cx <= x1 && pc < lim) { m = 1; maxPen = pc; } }
             else
             {
                 float cs = MathF.Cos(A), sn = MathF.Sin(A);
                 for (int k = 0; k < 4; k++)
                 {
                     float lx = (k == 0 || k == 3) ? -Hw : Hw, ly = k < 2 ? -Hh : Hh, rx = lx * cs - ly * sn, ry = lx * sn + ly * cs, pen = d - ((X + rx) * nx + (Y + ry) * ny);
-                    if (pen > 0) { cr[m * 2] = rx; cr[m * 2 + 1] = ry; m++; maxPen = Math.Max(maxPen, pen); }
+                    if (pen > 0 && pen < lim && X + rx >= x0 && X + rx <= x1) { cr[m * 2] = rx; cr[m * 2 + 1] = ry; m++; maxPen = Math.Max(maxPen, pen); }
                 }
             }
             if (m == 0 || maxPen <= 0) return;
@@ -97,6 +135,20 @@ namespace GlamourGames
             float tx = -ny, ty = nx; vx = Vx - W * ry; vy = Vy + W * rx; float vt = vx * tx + vy * ty, rt = rx * ty - ry * tx;
             float jt = Math.Clamp(-vt / (1 + rt * rt * InvI), -Mu * jn, Mu * jn);
             Vx += jt * tx; Vy += jt * ty; W += rt * jt * InvI;
+        }
+
+        /// <summary>Stoss zweier Kreisscheiben gleicher Masse (Restitution, Reibung am Beruehrpunkt koppelt die Drehung).</summary>
+        public static void Collide(Body a, Body b)
+        {
+            if (a.R <= 0 || b.R <= 0) return;
+            float dx = b.X - a.X, dy = b.Y - a.Y, d = MathF.Sqrt(dx * dx + dy * dy), sum = a.R + b.R; if (d >= sum || d < 1e-3f) return;
+            float nx = dx / d, ny = dy / d, pen = sum - d; a.X -= nx * pen * .5f; a.Y -= ny * pen * .5f; b.X += nx * pen * .5f; b.Y += ny * pen * .5f;
+            float rvx = (b.Vx - b.W * -ny * b.R) - (a.Vx - a.W * ny * a.R), rvy = (b.Vy + b.W * -nx * b.R) - (a.Vy + a.W * nx * a.R), vn = rvx * nx + rvy * ny;
+            if (vn >= 0) return;
+            float e = vn < -60 ? Math.Min(a.E, b.E) : 0, jn = -(1 + e) * vn / 2;
+            a.Vx -= jn * nx; a.Vy -= jn * ny; b.Vx += jn * nx; b.Vy += jn * ny; a.Impact = Math.Max(a.Impact, -vn); b.Impact = Math.Max(b.Impact, -vn);
+            float tx = -ny, ty = nx, vt = rvx * tx + rvy * ty, jt = Math.Clamp(-vt / 6, -Math.Min(a.Mu, b.Mu) * jn, Math.Min(a.Mu, b.Mu) * jn);
+            a.Vx -= jt * tx; a.Vy -= jt * ty; b.Vx += jt * tx; b.Vy += jt * ty; a.W -= jt * 2 / a.R; b.W -= jt * 2 / b.R;
         }
 
         /// <summary>Transformation fuer das Zeichnen: Ursprung im Schwerpunkt, gedreht.</summary>

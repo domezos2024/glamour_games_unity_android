@@ -164,8 +164,16 @@ namespace GlamourGames
                 if (p.kind == K_COIN && p.vy > 0 && p.y > App.VY1 - p.size * .5f)
                 {
                     // Muenze prallt vom unteren Rand ab: Restitution, Reibung bremst Gleiten und Drehung
-                    p.y = App.VY1 - p.size * .5f; if (p.vy > 220 && R.NextDouble() < .25) Sfx.Play(S.Coin, Math.Min(.25f, p.vy / 6000), Rf(1.1f, 1.5f));
-                    p.vy = p.vy > 90 ? -p.vy * .42f : 0; p.vx *= .72f; p.vr *= .6f;
+                    p.y = App.VY1 - p.size * .5f; if (p.vy > 220 && R.NextDouble() < .25) Impact.Play(Mat.Metal, p.vy / 3000, .6f);
+                    if (p.vy > 90) { p.vy = -p.vy * .42f; p.vx *= .72f; p.vr *= .6f; }
+                    else { p.vy = 0; p.grav = 0; p.drag = 1.1f; p.vr = 0; p.rot = MathF.Round(p.rot / MathF.PI) * MathF.PI; }   // liegt: ab jetzt kreiseln
+                }
+                else if (p.kind == K_COIN && p.grav == 0 && p.drag > 0)
+                {
+                    // Euler-Scheibe: Neigung (drag) nimmt ab, die Kreiselfrequenz steigt wie 1/Wurzel(Neigung); rollt dabei aus
+                    p.drag *= MathF.Exp(-1.6f * dt); p.vr += (5 / MathF.Sqrt(p.drag + .03f)) * dt; p.vx *= 1 - Math.Min(1, 2.5f * dt);
+                    p.aux = .5f * p.drag * MathF.Sin(p.vr); p.rot = MathF.Round(p.rot / MathF.PI) * MathF.PI + p.drag * .9f * MathF.Cos(p.vr);
+                    if (p.drag < .02f) p.drag = 0;
                 }
                 if (p.kind == K_BUB) p.x += MathF.Sin(p.life * 7 + p.aux) * 22 * dt;
                 if (p.kind == K_STREAK && p.aux == 3 && R.NextDouble() < dt * 30) l.Add(new P { x = p.x, y = p.y, vx = Rf(-8, 8), vy = Rf(10, 40), max = Rf(.6f, 1.1f), size = 2.2f, drag = 1.5f, grav = 60, col = new Col(255, 170, 70), kind = K_SPARK });

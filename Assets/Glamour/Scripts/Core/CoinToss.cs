@@ -39,7 +39,7 @@ namespace GlamourGames
                     float t = m.T - t0, prevA = ang; lift = Lift(t, out int hop);
                     ang = t < Flight ? target * t / Flight : target + Phys.Ring(Wob, t - Flight, 2.6f, .22f);
                     if (t < Flight && (int)(ang / MathF.PI) != (int)(prevA / MathF.PI)) Sfx.Play(S.Tick, .15f, 1.4f);
-                    if (hop > hops) { Sfx.Play(S.Coin, MathF.Pow(Rest, hops), 1 + hops * .12f); hops = hop; }
+                    if (hop > hops) { Impact.Play(Mat.Metal, MathF.Pow(Rest, hops)); hops = hop; }
                     if (t > Flight + 1.1f)
                     {
                         fin = true; moving = false; ang = target; lift = 0; first = res == choice ? 0 : 1; Haptics.Win();

@@ -113,10 +113,13 @@ namespace GlamourGames
             if (cs != null)
             {
                 catcherMat = new Material(cs) { name = "ShadowCatcher" };
-                var fl = GameObject.CreatePrimitive(PrimitiveType.Quad); fl.name = "Tray Floor"; fl.layer = TrayLayer; fl.transform.SetParent(root.transform, false);
-                UnityEngine.Object.Destroy(fl.GetComponent<Collider>());
+                // Boden-Quad selbst aufbauen: CreatePrimitive haengt einen MeshCollider an, den es ohne Physikmodul im Build nicht gibt
+                var fl = new GameObject("Tray Floor") { layer = TrayLayer }; fl.transform.SetParent(root.transform, false);
+                var qm = new Mesh { name = "TrayFloorQuad", vertices = new[] { new Vector3(-.5f, -.5f, 0), new Vector3(.5f, -.5f, 0), new Vector3(-.5f, .5f, 0), new Vector3(.5f, .5f, 0) }, uv = new[] { new Vector2(0, 0), new Vector2(1, 0), new Vector2(0, 1), new Vector2(1, 1) }, triangles = new[] { 0, 3, 1, 3, 0, 2 } };
+                qm.normals = new[] { Vector3.back, Vector3.back, Vector3.back, Vector3.back }; qm.RecalculateBounds();
+                fl.AddComponent<MeshFilter>().sharedMesh = qm;
                 fl.transform.rotation = Quaternion.Euler(90, 0, 0); fl.transform.localScale = new Vector3(40, 40, 1);
-                var fr = fl.GetComponent<MeshRenderer>(); fr.sharedMaterial = catcherMat; fr.shadowCastingMode = ShadowCastingMode.Off; fr.receiveShadows = true;
+                var fr = fl.AddComponent<MeshRenderer>(); fr.sharedMaterial = catcherMat; fr.shadowCastingMode = ShadowCastingMode.Off; fr.receiveShadows = true;
             }
         }
 

@@ -46,18 +46,38 @@ namespace GlamourGames
         int UpperSum(int p) => Cats.Where(c => c.upper && c.key != "bonus" && card[p].ContainsKey(c.key)).Sum(c => card[p][c.key]);
         int[] Vals() => dice.Select(d => d.V).ToArray();
         void HumanRoll() { if (CpuTurn || CpuThinking) return; Roll(); }
-        void Roll()
+        /// <summary>Wuerfeln. power/spin/aim kommen aus der Wischgeste (Standard: normaler Wurf).</summary>
+        void Roll(float power = 1, float spin = 0, float aim = 0)
         {
             if (selRow >= 0 && !over && !rolling) { int r0 = selRow; selRow = -1; Score(r0); return; }
             if (rolls >= 3 || over || rolling) return;
-            selRow = -1; rolls++; rolling = true; Sfx.Play(S.Dice); var rnd = Rng.Shared;
-            for (int i = 0; i < 5; i++)
+            selRow = -1; rolls++; rolling = true; Sfx.Play(S.Dice, Math.Clamp(power, .6f, 1.3f)); var rnd = Rng.Shared;
+            var free = Enumerable.Range(0, 5).Where(i => !dice[i].Held).ToList();
+            foreach (var i in free)
             {
-                var d = dice[i]; if (d.Held) continue;
-                d.V = rnd.Next(1, 7); d.T = 0; d.Dur = .9f + i * .09f;
-                if (Physical) { d.Track = DicePhysics.Throw(new Random(rnd.Next()), Slot3D(i), d.V); d.Dur = d.Track.Duration; d.HitI = 0; d.Rest = d.Track.Rot[d.Track.Rot.Length - 1]; } d.Spins = 2 + rnd.Next(3); d.Rz = rnd.Next(4) * MathF.PI / 2 + (rnd.NextSingle() - .5f) * .3f; d.Bounce = 90 + rnd.Next(60); d.Jit = (rnd.NextSingle() - .5f) * 30;
-                var a = new[] { rnd.NextSingle() - .5f, rnd.NextSingle() - .5f, rnd.NextSingle() - .5f + .2f }; d.Axis = a;
+                var d = dice[i];
+                d.V = rnd.Next(1, 7); d.T = 0; d.Dur = .9f + i * .09f; d.Spins = 2 + rnd.Next(3); d.Rz = rnd.Next(4) * MathF.PI / 2 + (rnd.NextSingle() - .5f) * .3f; d.Bounce = 90 + rnd.Next(60); d.Jit = (rnd.NextSingle() - .5f) * 30;
+                d.Axis = new[] { rnd.NextSingle() - .5f, rnd.NextSingle() - .5f, rnd.NextSingle() - .5f + .2f };
             }
+            if (Physical && free.Count > 0)
+            {
+                // alle freien Wuerfel fliegen gemeinsam aus der Hand und stossen aneinander
+                var tracks = DicePhysics.ThrowAll(new Random(rnd.Next()), free.Select(Slot3D).ToArray(), free.Select(i => dice[i].V).ToArray(), power, spin, aim, Enumerable.Range(0, 5).Where(i => dice[i].Held).Select(Slot3D).ToArray());
+                for (int k = 0; k < free.Count; k++) { var d = dice[free[k]]; d.Track = tracks[k]; d.Dur = d.Track.Duration; d.HitI = 0; d.Rest = d.Track.Rot[d.Track.Rot.Length - 1]; }
+            }
+            Log.I($"wurf: frei={free.Count} kraft={power:0.00} drall={spin:0.00} richtung={aim:0.00}");
+        }
+        // Wischgeste ueber den Tisch: Geschwindigkeit -> Wurfkraft, seitliche Komponente -> Richtung und Drall
+        float swX, swY, swT = -1;
+        static readonly Box TableArea = Gfx.R(40, 230, 760, 330);
+        public override void MouseDown(float x, float y) { swT = TableArea.Contains(x, y) && !CpuTurn ? Time : -1; swX = x; swY = y; }
+        bool TrySwipe(float x, float y)
+        {
+            if (swT < 0) return false; float dt = Math.Max(.03f, Time - swT), dx = x - swX, dy = y - swY, dist = MathF.Sqrt(dx * dx + dy * dy); swT = -1;
+            if (dist < 90 || CpuTurn || CpuThinking || rolling || over || rolls >= 3) return false;
+            float speed = dist / dt;
+            Roll(Math.Clamp(speed / 1600f, .6f, 1.6f), Math.Clamp(-dy / Math.Max(1, dist) * (dx < 0 ? -1 : 1), -1, 1), Math.Clamp(dy / dist, -1, 1));
+            return true;
         }
         void ToggleHold(int i) { dice[i].Held = !dice[i].Held; Sfx.Play(S.Take, .6f); }
         public override bool WantsHand => hoverRow >= 0 || hoverDie >= 0;
@@ -73,6 +93,7 @@ namespace GlamourGames
         {
             if (parade != null && parade.T > 2 && !resShown) { ShowResult(); return; }
             if (CpuTurn) return;
+            if (TrySwipe(x, y)) return;
             if (hoverDie >= 0 && rolls > 0 && !rolling) ToggleHold(hoverDie);
             else if (hoverRow >= 0) { selRow = selRow == hoverRow ? -1 : hoverRow; Sfx.Play(S.Take, .6f); }
         }
@@ -149,7 +170,7 @@ namespace GlamourGames
                 {
                     d.T += dt; rolling = true;
                     // Aufprall-Geraeusche synchron zur simulierten Bahn
-                    if (d.Track != null) while (d.HitI < d.Track.Hits.Count && d.Track.Hits[d.HitI].t <= d.T) { var h = d.Track.Hits[d.HitI++]; Sfx.Play(S.Stop, .12f + .4f * h.s, 1.15f + .3f * (1 - h.s)); }
+                    if (d.Track != null) while (d.HitI < d.Track.Hits.Count && d.Track.Hits[d.HitI].t <= d.T) { var h = d.Track.Hits[d.HitI++]; Impact.Play(Mat.Dice, h.s); }
                     if (d.T >= d.Dur) { d.T = d.Dur; if (d.Track == null) { var r = DieRect(i); Fx.Spark(r.MidX, r.Bottom, C.Orange, 10, 160); Fx.Smoke(r.MidX, r.Bottom - 10, 2, 8, 20, .8f); Sfx.Play(S.Stop, .35f, 1.2f); } }
                 }
                 d.Lift.Target = d.Held ? -26 : 0; d.Lift.Update(dt);
@@ -173,7 +194,7 @@ namespace GlamourGames
             Gfx.RectRadial(c, felt, 22, felt.MidX, felt.MidY - 40, 470, new Col(22, 106, 68), new Col(5, 32, 22));
             Gfx.Stroke(c, felt, 22, Col.Black.A(.5f), 3); Gfx.Stroke(c, Gfx.Inflate(felt, -6), 18, C.Green.A(.28f), 2);
             Gfx.Light(c, felt.MidX, felt.MidY - 50, 380, new Col(255, 240, 200), .06f, 1.2f);
-            Gfx.Text(c, CpuTurn ? "Der Computer ist am Zug ..." : selRow >= 0 ? Platform.Pick("Zeile anklicken = abwählen, grüner Knopf = eintragen", "Zeile antippen = abwählen, grüner Knopf = eintragen") : Platform.Pick("Klicke auf Würfel oder Tasten 1-5, um sie zu halten  -  Leertaste würfelt", "Tippe auf Würfel, um sie zu halten"), 430, 560, 22, CpuTurn ? C.Pink.Light(.4f) : C.Dim, Al.C, false);
+            Gfx.Text(c, CpuTurn ? "Der Computer ist am Zug ..." : selRow >= 0 ? Platform.Pick("Zeile anklicken = abwählen, grüner Knopf = eintragen", "Zeile antippen = abwählen, grüner Knopf = eintragen") : Platform.Pick("Würfel/Tasten 1-5 halten  -  Leertaste oder über den Tisch ziehen würfelt", "Würfel antippen = halten  -  über den Tisch wischen = werfen"), 430, 560, 22, CpuTurn ? C.Pink.Light(.4f) : C.Dim, Al.C, false);
             if (Physical)
             {
                 var arr = new Die3D.TrayDie[5];

@@ -35,7 +35,7 @@ namespace GlamourGames
         void NextRound() { starter = 1 - starter; NewGame(); }
         void NewGame()
         {
-            gen++; CancelCpuThink(); cpuAim = -1; parade = null; resShown = false; fleet = new[] { Mk(), Mk() }; shots = new[] { new HashSet<int>(), new HashSet<int>() }; cur = 0; ph = Ph.Setup; sel = -1; horiz = true; mark.Clear(); sink.Clear(); sunkFx.Clear(); sinkers.Clear(); jolt.Clear(); Fx.Clear(); Modal = null; busy = false;
+            gen++; CancelCpuThink(); cpuAim = -1; parade = null; resShown = false; fleet = new[] { Mk(), Mk() }; shots = new[] { new HashSet<int>(), new HashSet<int>() }; cur = 0; ph = Ph.Setup; sel = -1; horiz = true; mark.Clear(); sink.Clear(); sunkFx.Clear(); sinkers.Clear(); jolt.Clear(); waves.Clear(); Fx.Clear(); Modal = null; busy = false;
             if (VsCpu) PlaceRandom(1);   // Computer-Flotte zufaellig und verdeckt
             BuildUi(); status = $"{PName(0)}: Schiffe platzieren";
         }
@@ -62,7 +62,7 @@ namespace GlamourGames
             if (sel < 0) { var s = fleet[cur].FirstOrDefault(x => x.Cells.Contains(cell)); if (s != null) { sel = fleet[cur].IndexOf(s); horiz = s.Horiz; s.Cells.Clear(); Sfx.Play(S.Take); BuildUi(); } return; }
             var sh = fleet[cur][sel];
             if (!CanPlace(cell, sh)) { App.Toast(Footprint(cell, sh.Size, horiz) == null ? "Schiff passt nicht aufs Feld" : "Position belegt"); Sfx.Play(S.NoMatch, .5f); return; }
-            sh.Cells = Footprint(cell, sh.Size, horiz); sh.Horiz = horiz; Sfx.Play(S.Drop); var r = Cell(cell); Fx.Ring(r.MidX, r.MidY, C.Cyan, 20, 200); Fx.Splash(r.MidX, r.MidY, .5f);
+            sh.Cells = Footprint(cell, sh.Size, horiz); sh.Horiz = horiz; Sfx.Play(S.Drop); var r = Cell(cell); Fx.Ring(r.MidX, r.MidY, C.Cyan, 20, 200); Fx.Splash(r.MidX, r.MidY, .5f); waves.Add((cur, r.MidX, r.MidY, Time));
             sel = fleet[cur].FindIndex(x => x.Cells.Count == 0); BuildUi();
         }
         /// <summary>Gueltige Zufallsflotte fuer Platz p (Regeln wie im Original: keine Ueberlappung).</summary>
@@ -98,11 +98,12 @@ namespace GlamourGames
         {
             if (busy || shots[cur].Contains(cell)) return;
             int p = cur, o = 1 - p; shots[p].Add(cell); mark[cell + p * 100] = 0; var r = Cell(cell);
+            waves.Add((o, r.MidX, r.MidY, Time)); if (waves.Count > 12) waves.RemoveAt(0);
             var hit = fleet[o].FirstOrDefault(s => s.Cells.Contains(cell));
             if (hit != null)
             {
                 jolt[hit] = (Time, (Rng.F() < .5f ? -1 : 1) * Rng.F(9, 14));
-                Sfx.Play(S.Hit); Sfx.Play(S.Boom, .7f, .9f + Rng.F() * .3f); Tm.After(.25f, () => Sfx.Play(S.Crackle, .4f)); App.Shake(11); App.Flash(C.Orange, .22f); Fx.Explosion(r.MidX, r.MidY, 1f); Fx.Burst(r.MidX, r.MidY, 24, new[] { C.Orange, C.Yellow, C.Red }, 380, 0, 200); Pop("BUMM!", r.MidX, r.MidY - 30, C.Yellow, 44);
+                Sfx.Play(S.Hit); Sfx.Play(S.Boom, .7f, .9f + Rng.F() * .3f); Tm.After(.25f, () => Sfx.Play(S.Crackle, .4f)); App.Shake(11); App.Flash(C.Orange, .22f); Fx.Explosion(r.MidX, r.MidY, 1f); Fx.Ripple(r.MidX, r.MidY, 120); Fx.Ripple(r.MidX, r.MidY, 190, .22f); Fx.Burst(r.MidX, r.MidY, 24, new[] { C.Orange, C.Yellow, C.Red }, 380, 0, 200); Pop("BUMM!", r.MidX, r.MidY - 30, C.Yellow, 44);
                 if (hit.Cells.All(shots[p].Contains))
                 {
                     hit.Sunk = true; sink[hit] = 0; sinkers[hit] = new Sinker(Rng.F() < .5f ? -1 : 1); Log.I($"versenkt: {hit.Name}"); Sfx.Play(S.Sunk); Sfx.Play(S.Creak, .8f); Tm.After(.7f, () => Sfx.Play(S.Gurgle, .8f)); App.Flash(C.Orange, .35f); App.Shake(16);
@@ -203,12 +204,30 @@ namespace GlamourGames
         /// Schwimmendes Schiff im Seegang (Draufsicht): Gieren und Versatz aus zwei Wellenkomponenten, Eigenperiode waechst
         /// mit der Schiffslaenge; ein Treffer stoesst das Schiff seitlich an, das gedaempft ausschwingt.
         /// </summary>
+        // Wellenringe der Einschlaege: Ausbreitung mit fester Geschwindigkeit, Amplitude faellt mit Laufweg und Zeit
+        readonly List<(int board, float x, float y, float t)> waves = new List<(int, float, float, float)>();
+        const float WaveC = 230, WaveLen = 80;
+        /// <summary>Wellenhoehe (-1..1) und Ausbreitungsrichtung am Punkt (x, y) fuer das Brett des Spielers board.</summary>
+        (float h, float dx, float dy) Wave(int board, float x, float y)
+        {
+            float h = 0, ddx = 0, ddy = 0;
+            foreach (var w in waves)
+            {
+                if (w.board != board) continue; float age = Time - w.t, dx = x - w.x, dy = y - w.y, r = MathF.Sqrt(dx * dx + dy * dy) + 1e-3f, front = WaveC * age;
+                if (age > 3.5f || r > front) continue;
+                float a = MathF.Exp(-1.3f * age) / MathF.Sqrt(1 + r / 50) * MathF.Min(1, (front - r) / WaveLen), v = a * MathF.Sin(2 * MathF.PI * (r - front) / WaveLen);
+                h += v; ddx += dx / r * v; ddy += dy / r * v;
+            }
+            return (h, ddx, ddy);
+        }
         void Afloat(Canvas2D c, Ship s, float x, float y, float sz)
         {
             float L = s.Size * sz, cx = s.Horiz ? x + L / 2 : x + sz / 2, cy = s.Horiz ? y + sz / 2 : y + L / 2, ph = s.Cells.Count > 0 ? s.Cells[0] * .73f : 0;
             float w = 2 * MathF.PI / (2.2f + .5f * s.Size), yaw = .012f * MathF.Sin(Time * w + ph) + .006f * MathF.Sin(Time * w * 1.9f + ph * 2), sway = 1.4f * MathF.Sin(Time * w * .8f + ph);
             if (jolt.TryGetValue(s, out var j)) { float k = Phys.Ring(j.v, Time - j.t, .9f, .25f); sway += k; yaw += k * .004f; }
-            c.Save(); c.Translate(cx + (s.Horiz ? 0 : sway), cy + (s.Horiz ? sway : 0)); c.RotateRadians(yaw); c.Translate(-cx, -cy);
+            var wv = Wave(fleet[0].Contains(s) ? 0 : 1, cx, cy); float heave = 1 + .06f * wv.h;
+            // Welle hebt das Schiff an (naeher zur Kamera = groesser) und schiebt es in Laufrichtung
+            c.Save(); c.Translate(cx + (s.Horiz ? 0 : sway) + 5 * wv.dx, cy + (s.Horiz ? sway : 0) + 5 * wv.dy); c.RotateRadians(yaw); c.Scale(heave, heave); c.Translate(-cx, -cy);
             Hull(c, x, y, s.Size, sz, s.Horiz, 1, 0, Time); c.Restore();
         }
         static Col Ca(int r, int g, int b, float a) => new Col(r, g, b, (int)(255 * a));

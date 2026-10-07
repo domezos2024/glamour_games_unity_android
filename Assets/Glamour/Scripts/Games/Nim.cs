@@ -88,7 +88,7 @@ namespace GlamourGames
             for (int i = fly.Count - 1; i >= 0; i--)
             {
                 var f = fly[i]; f.T += dt; f.B.Update(dt);
-                if (f.B.Impact > 150) { Sfx.Play(S.Drop, Math.Min(.45f, f.B.Impact / 3000), Rng.F(1.3f, 1.6f)); Fx.Smoke(f.B.X, FloorY, 1, 10, 30, .8f); }
+                if (f.B.Impact > 150) { Impact.Play(Mat.Wood, f.B.Impact / 2500f, 1.3f); Fx.Smoke(f.B.X, FloorY, 1, 10, 30, .8f); }
                 if (f.B.Resting || f.T > 3.5f) f.Fade += dt * 1.6f;
                 if (f.Fade >= 1) fly.RemoveAt(i);
             }

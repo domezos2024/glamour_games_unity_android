@@ -251,7 +251,7 @@ namespace GlamourGames
                 Phys.Drop(T, DropH, Gt, TRest, out int hp);
                 if (hp > hops)
                 {
-                    float k = MathF.Pow(TRest, hops); Sfx.Play(S.Gong, .55f * k, 1.15f + hops * .1f); App.Shake(10 * k);
+                    float k = MathF.Pow(TRest, hops); Impact.Play(Mat.Metal, k, 2.2f); App.Shake(10 * k);
                     if (hops == 0) rock.Kick((Rng.F() < .5f ? -1 : 1) * rock.Critical * .55f); hops = hp;
                 }
                 rock.Update(dt);
