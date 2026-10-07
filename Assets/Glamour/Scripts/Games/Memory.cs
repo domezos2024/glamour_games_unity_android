@@ -27,10 +27,20 @@ namespace GlamourGames
         const float CW = 104, CH = 128, GAP = 12, X0 = (1600 - (8 * CW + 7 * GAP)) / 2, Y0 = 128;
         static Box Rc(int i) => Gfx.R(X0 + (i % 8) * (CW + GAP), Y0 + (i / 8) * (CH + GAP), CW, CH);
         bool CpuTurn => VsCpu && cur == 1;
+        // Bluetooth: Mitspieler auf Platz 2; gleiche Kartenlage auf beiden Geraeten durch gemeinsamen Startwert
+        bool RemoteTurn => Remote && cur == 1; Action netNew; int deals;
+        public override void NetRecv(string kind, string[] a)
+        {
+            if (kind != "flip") { base.NetRecv(kind, a); return; }
+            if (cards == null || toss) return;
+            if (!RemoteTurn || locked || up.Count >= 2) { int g = gen; Tm.After(.1f, () => { if (g == gen) NetRecv(kind, a); }); return; }
+            int i = Link.Int(a[0]); if (i >= 0 && i < 40 && !cards[i].Matched && !up.Contains(i)) Reveal(i);
+        }
         public override void Enter()
         {
             base.Enter();
-            bNew = Ui.Add(new Button(50, 780, 250, 62, "Neues Spiel", C.Purple, () => ToToss(), 24) { Visible = false });
+            netNew = Shared("newgame", ToToss);
+            bNew = Ui.Add(new Button(50, 780, 250, 62, "Neues Spiel", C.Purple, () => netNew(), 24) { Visible = false });
             Opponents.AddSwitch(this, OppKey, 1315, 560, 260, 70, ToToss);
             Opponents.Pick(this, OppKey, o => ToToss());
         }
@@ -43,7 +53,8 @@ namespace GlamourGames
         void StartGame()
         {
             toss = false; bNew.Visible = true; score = new int[2]; matched = 0; up.Clear(); locked = false; cur = first; gen++; CancelCpuThink();
-            var pairs = Sym.Concat(Sym).OrderBy(_ => Rng.Shared.Next()).ToArray();
+            var rr = Remote ? new Random(Link.Seed * 31 + deals) : Rng.Shared; deals++;
+            var pairs = Sym.Concat(Sym).OrderBy(_ => rr.Next()).ToArray();
             cards = pairs.Select(s => new Card { Sym = Array.IndexOf(Sym, s) }).ToArray();
             for (int i = 0; i < cards.Length; i++) { cards[i].Lift.V = -400 - i * 20; cards[i].Lift.Target = 0; }
             brain = VsCpu ? MemoryBrain.For((int)Opp) : null;
@@ -52,20 +63,20 @@ namespace GlamourGames
         public override bool WantsHand => !toss && over >= 0;
         public override void MouseMove(float x, float y)
         {
-            over = -1; if (cards == null || toss || Modal != null || CpuTurn || CpuThinking) return;
+            over = -1; if (cards == null || toss || Modal != null || CpuTurn || CpuThinking || RemoteTurn) return;
             for (int i = 0; i < 40; i++) if (Rc(i).Contains(x, y)) over = i;
         }
         public override void MouseUp(float x, float y)
         {
-            if (toss || locked || over < 0 || CpuTurn || CpuThinking) return; var c = cards[over];
+            if (toss || locked || over < 0 || CpuTurn || CpuThinking || RemoteTurn) return; var c = cards[over];
             if (c.Matched || up.Contains(over)) return;
             Reveal(over);
         }
         /// <summary>Karte aufdecken - gemeinsamer Weg fuer Mensch und Computer.</summary>
         void Reveal(int i)
         {
-            var c = cards[i]; c.Flip.Target = 1; up.Add(i); Sfx.Play(S.Flip);
-            if (CpuTurn) { c.CpuT = 0; var r = Rc(i); Fx.Ring(r.MidX, r.MidY, C.Pink, 16, 170); }
+            var c = cards[i]; c.Flip.Target = 1; up.Add(i); Sfx.Play(S.Flip); if (Remote && cur == 0) Net("flip", i);
+            if (CpuTurn || RemoteTurn) { c.CpuT = 0; var r = Rc(i); Fx.Ring(r.MidX, r.MidY, C.Pink, 16, 170); }
             brain?.Observe(i, c.Sym, Rng.Shared);
             if (up.Count == 2) Check();
         }
@@ -114,9 +125,9 @@ namespace GlamourGames
         void End()
         {
             // gegen den Computer zaehlt fuer die Bestenliste nur das Ergebnis des Menschen
-            int best = VsCpu ? score[0] : Math.Max(score[0], score[1]); int w = score[0] > score[1] ? 0 : score[1] > score[0] ? 1 : -1;
+            int best = VsCpu || Remote ? score[0] : Math.Max(score[0], score[1]); int w = score[0] > score[1] ? 0 : score[1] > score[0] ? 1 : -1;
             Celebrate(w == 0 ? C.Cyan : w == 1 ? C.Pink : C.Gold, 5, 1.1f, w < 0 ? "Unentschieden!" : $"{PName(w)} gewinnt!"); Sfx.Play(S.Win); App.Shake(10);
-            Action show = () => Result(w < 0 ? "UNENTSCHIEDEN!" : $"{PName(w)} gewinnt!", $"{PName(0)}: {score[0]} Pkt   |   {PName(1)}: {score[1]} Pkt", w == 0 ? C.Cyan : w == 1 ? C.Pink : C.Gold, ("Nochmal", C.Green, () => ToToss()), ("Menü", C.Purple, () => App.Go(new Menu())));
+            Action show = () => Result(w < 0 ? "UNENTSCHIEDEN!" : $"{PName(w)} gewinnt!", $"{PName(0)}: {score[0]} Pkt   |   {PName(1)}: {score[1]} Pkt", w == 0 ? C.Cyan : w == 1 ? C.Pink : C.Gold, ("Nochmal", C.Green, netNew), ("Menü", C.Purple, () => App.Go(new Menu())));
             int g = gen;
             Tm.After(3f, () => { if (g != gen) return; if (Save.IsHigh("hs_mem", best)) NameEntry("hs_mem", best, "NEUER HIGHSCORE!", show); else show(); });
         }

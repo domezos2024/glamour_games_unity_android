@@ -24,8 +24,9 @@ namespace GlamourGames
         public override void Enter()
         {
             base.Enter();
+            netNext = Shared("next", NextRound); netNew = Shared("newmatch", NewMatch);
             Opponents.AddSwitch(this, OppKey, 40, 600, 260, 70, NewMatch);
-            Ui.Add(new Button(40, 700, 260, 62, "Neue Runde", C.Green, NextRound, 24)); Ui.Add(new Button(40, 780, 260, 62, "Punkte zurück", C.Purple, NewMatch, 22));
+            Ui.Add(new Button(40, 700, 260, 62, "Neue Runde", C.Green, () => netNext(), 24)); Ui.Add(new Button(40, 780, 260, 62, "Punkte zurück", C.Purple, () => netNew(), 22));
             Opponents.Pick(this, OppKey, o => NewMatch());
         }
         int starter = 1;
@@ -38,7 +39,10 @@ namespace GlamourGames
             CpuCheck();
         }
         bool CpuTurn => VsCpu && cur == 2 && !over && !tossing;
-        bool Locked => CpuTurn || CpuThinking || cpuAiming;
+        bool Locked => CpuTurn || CpuThinking || cpuAiming || RemoteTurn;
+        // Bluetooth: Platz 2 ist der Mitspieler am anderen Geraet
+        bool RemoteTurn => Remote && cur == 2 && !over && !tossing; Action netNext, netNew;
+        public override void NetRecv(string kind, string[] a) { if (kind == "take") { if (RemoteTurn) Take(Link.Int(a[0]), Link.Int(a[1])); } else base.NetRecv(kind, a); }
         public override bool WantsHand => hp >= 0 && !Locked;
         public override void MouseMove(float x, float y)
         {
@@ -67,6 +71,7 @@ namespace GlamourGames
         void Take(int p, int k)
         {
             if (over || p < 0 || k < 0 || k >= piles[p]) return;
+            if (Remote && cur == 1) Net("take", p, k);
             int n = piles[p] - k;
             for (int j = k; j < piles[p]; j++)
             {
@@ -78,7 +83,7 @@ namespace GlamourGames
             if (piles.All(v => v == 0))
             {
                 over = true; score[cur - 1]++; status = $"{PName(cur - 1)} GEWINNT!"; Sfx.Play(S.Win); Celebrate(cur == 1 ? C.Cyan : C.Pink, 4, 1f, $"{PName(cur - 1)} gewinnt!"); App.Flash(C.Gold, .3f);
-                int w = cur, g = gen; Tm.After(3.4f, () => { if (g != gen) return; Result($"{PName(w - 1)} gewinnt!", $"Wer den letzten Stab nimmt, gewinnt.  Stand {score[0]} : {score[1]}", w == 1 ? C.Cyan : C.Pink, ("Nochmal", C.Green, NextRound), ("Menü", C.Purple, () => App.Go(new Menu()))); });
+                int w = cur, g = gen; Tm.After(3.4f, () => { if (g != gen) return; Result($"{PName(w - 1)} gewinnt!", $"Wer den letzten Stab nimmt, gewinnt.  Stand {score[0]} : {score[1]}", w == 1 ? C.Cyan : C.Pink, ("Nochmal", C.Green, netNext), ("Menü", C.Purple, () => App.Go(new Menu()))); });
             }
             else { cur = 3 - cur; status = $"{PName(cur - 1)} ist dran"; CpuCheck(); }
         }

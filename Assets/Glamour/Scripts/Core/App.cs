@@ -334,6 +334,7 @@ namespace GlamourGames
             canvas.Begin(); Die3D.FrameBegin?.Invoke();
             try
             {
+                Link.Update();
                 cur.BaseUpdate(dt);
                 cur.BaseDraw(canvas);
                 if (cur.Chrome) DrawChrome(canvas);

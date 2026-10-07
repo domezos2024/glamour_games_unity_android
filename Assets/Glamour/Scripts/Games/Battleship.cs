@@ -22,10 +22,31 @@ namespace GlamourGames
         // Computer: Gegner-Button, Generationszaehler, Fadenkreuz-Ziel
         Button bOpp; int gen; int cpuAim = -1; float aimX = GX + N * GS / 2, aimY = GY + N * GS / 2;
         bool CpuTurn => VsCpu && cur == 1 && ph == Ph.Attack;
+        // Bluetooth: jeder platziert seine Flotte am eigenen Geraet, die Aufstellungen werden ausgetauscht, danach Schuesse
+        bool RemoteTurn => Remote && cur == 1 && ph == Ph.Attack; bool myFleetSent, theirFleet; Action netNext, netNew;
+        static string Enc(List<Ship> f) => string.Join(";", f.Select(s => (s.Horiz ? "1" : "0") + "." + string.Join(".", s.Cells)));
+        void Dec(string txt)
+        {
+            var parts = txt.Split(';'); if (parts.Length != fleet[1].Count) return;
+            for (int i = 0; i < parts.Length; i++) { var v = parts[i].Split('.'); fleet[1][i].Horiz = v[0] == "1"; fleet[1][i].Cells = v.Skip(1).Select(Link.Int).ToList(); }
+        }
+        public override void NetRecv(string kind, string[] a)
+        {
+            switch (kind)
+            {
+                case "fleet": Dec(a[0]); theirFleet = true; if (myFleetSent && ph == Ph.Setup) StartAttack(starter); else if (ph == Ph.Setup) App.Toast($"{PName(1)} ist bereit"); break;
+                case "shot":
+                    if (ph != Ph.Attack) return;
+                    if (busy || !RemoteTurn) { int g = gen; Tm.After(.1f, () => { if (g == gen) NetRecv(kind, a); }); return; }
+                    Shoot(Link.Int(a[0])); break;
+                default: base.NetRecv(kind, a); break;
+            }
+        }
         public override Pt ThinkPos => new Pt(GX + N * GS / 2, 858);
         public override void Enter()
         {
             base.Enter();
+            netNext = Shared("next", NextRound); netNew = Shared("newmatch", NewMatch);
             bOpp = Opponents.AddSwitch(this, OppKey, 1150, 22, 260, 70, NewMatch);
             NewGame();
             Opponents.Pick(this, OppKey, o => NewMatch());
@@ -35,7 +56,7 @@ namespace GlamourGames
         void NextRound() { starter = 1 - starter; NewGame(); }
         void NewGame()
         {
-            gen++; CancelCpuThink(); cpuAim = -1; parade = null; resShown = false; fleet = new[] { Mk(), Mk() }; shots = new[] { new HashSet<int>(), new HashSet<int>() }; cur = 0; ph = Ph.Setup; sel = -1; horiz = true; mark.Clear(); sink.Clear(); sunkFx.Clear(); sinkers.Clear(); jolt.Clear(); waves.Clear(); Fx.Clear(); Modal = null; busy = false;
+            gen++; CancelCpuThink(); cpuAim = -1; parade = null; resShown = false; fleet = new[] { Mk(), Mk() }; shots = new[] { new HashSet<int>(), new HashSet<int>() }; cur = 0; ph = Ph.Setup; sel = -1; horiz = true; mark.Clear(); sink.Clear(); sunkFx.Clear(); sinkers.Clear(); jolt.Clear(); waves.Clear(); Fx.Clear(); Modal = null; busy = false; myFleetSent = theirFleet = false;
             if (VsCpu) PlaceRandom(1);   // Computer-Flotte zufaellig und verdeckt
             BuildUi(); status = $"{PName(0)}: Schiffe platzieren";
         }
@@ -49,16 +70,17 @@ namespace GlamourGames
                 for (int i = 0; i < f.Count; i++) { int k = i; var b = Ui.Add(new Button(1020, 190 + i * 84, 420, 68, $"{f[i].Name} ({f[i].Size})", f[i].Cells.Count > 0 ? C.Green : C.Cyan, () => { sel = k; horiz = f[k].Horiz; }, 26)); shipBtns.Add(b); }
                 Ui.Add(new Button(1020, 550, 200, 62, "Drehen", C.Purple, () => horiz = !horiz, 24));
                 Ui.Add(new Button(1240, 550, 200, 62, "Zufällig", C.Orange, Randomize, 24));
-                Ui.Add(new Button(1020, 640, 420, 76, "Fertig", C.Green, Done, 32) { Enabled = fleet[cur].All(s => s.Cells.Count > 0) });
+                Ui.Add(new Button(1020, 640, 420, 76, myFleetSent ? "Warte ..." : "Fertig", C.Green, Done, 32) { Enabled = !myFleetSent && fleet[cur].All(s => s.Cells.Count > 0) });
             }
             else if (ph == Ph.Pass) Ui.Add(new Button(600, 610, 400, 90, "Bereit", C.Green, () => { var a = passAfter; passAfter = null; cur = passTo; a?.Invoke(); }, 36));
-            else if (ph == Ph.Attack) Ui.Add(new Button(1020, 760, 420, 62, "Aufgeben / Neues Spiel", C.Red, NewMatch, 22));
+            else if (ph == Ph.Attack) Ui.Add(new Button(1020, 760, 420, 62, "Aufgeben / Neues Spiel", C.Red, () => netNew(), 22));
         }
         bool Occ(int p, int cell, Ship except = null) => fleet[p].Any(s => s != except && s.Cells.Contains(cell));
         static List<int> Footprint(int cell, int size, bool h) => BattleAI.Footprint(cell, size, h);
         bool CanPlace(int cell, Ship s) { var fp = Footprint(cell, s.Size, horiz); return fp != null && fp.All(x => !Occ(cur, x, s)); }
         void Place(int cell)
         {
+            if (myFleetSent) return;
             if (sel < 0) { var s = fleet[cur].FirstOrDefault(x => x.Cells.Contains(cell)); if (s != null) { sel = fleet[cur].IndexOf(s); horiz = s.Horiz; s.Cells.Clear(); Sfx.Play(S.Take); BuildUi(); } return; }
             var sh = fleet[cur][sel];
             if (!CanPlace(cell, sh)) { App.Toast(Footprint(cell, sh.Size, horiz) == null ? "Schiff passt nicht aufs Feld" : "Position belegt"); Sfx.Play(S.NoMatch, .5f); return; }
@@ -71,10 +93,16 @@ namespace GlamourGames
             var fl = BattleAI.RandomFleet(fleet[p].Select(s => s.Size).ToArray(), Rng.Shared);
             for (int i = 0; i < fleet[p].Count; i++) { fleet[p][i].Cells = fl[i].cells; fleet[p][i].Horiz = fl[i].horiz; }
         }
-        void Randomize() { PlaceRandom(cur); sel = -1; Sfx.Play(S.Dice, .7f); BuildUi(); }
+        void Randomize() { if (myFleetSent) return; PlaceRandom(cur); sel = -1; Sfx.Play(S.Dice, .7f); BuildUi(); }
         void Done()
         {
             if (VsCpu) { StartAttack(starter); return; }   // gegen den Computer kein Platztausch
+            if (Remote)
+            {
+                if (myFleetSent) return; myFleetSent = true; Net("fleet", Enc(fleet[0])); sel = -1;
+                if (theirFleet) StartAttack(starter); else { status = $"Warte auf {PName(1)} ..."; BuildUi(); }
+                return;
+            }
             if (cur == 0) ToPass(1, () => { ph = Ph.Setup; sel = -1; status = $"{PName(1)}: Schiffe platzieren"; BuildUi(); });
             else ToPass(starter, () => { ph = Ph.Attack; status = $"{PName(starter)} - Feuer frei!"; BuildUi(); });
         }
@@ -83,7 +111,7 @@ namespace GlamourGames
         public override bool WantsHand => hover >= 0;
         public override void MouseMove(float x, float y)
         {
-            hover = -1; if (Modal != null || busy || CpuTurn || CpuThinking) return;
+            hover = -1; if (Modal != null || busy || CpuTurn || CpuThinking || RemoteTurn) return;
             if (ph == Ph.Setup || ph == Ph.Attack) for (int i = 0; i < 64; i++) if (Cell(i).Contains(x, y)) hover = i;
         }
         public override void KeyDown(Key k) { if (k == Key.R && ph == Ph.Setup) horiz = !horiz; }
@@ -91,12 +119,13 @@ namespace GlamourGames
         public override void MouseUp(float x, float y)
         {
             if (parade != null && parade.T > 1.5f) { FireRes(); return; }
-            if (hover < 0 || CpuTurn || CpuThinking) return;
+            if (hover < 0 || CpuTurn || CpuThinking || RemoteTurn) return;
             if (ph == Ph.Setup) Place(hover); else if (ph == Ph.Attack) Shoot(hover);
         }
         void Shoot(int cell)
         {
             if (busy || shots[cur].Contains(cell)) return;
+            if (Remote && cur == 0) Net("shot", cell);
             int p = cur, o = 1 - p; shots[p].Add(cell); mark[cell + p * 100] = 0; var r = Cell(cell);
             waves.Add((o, r.MidX, r.MidY, Time)); if (waves.Count > 12) waves.RemoveAt(0);
             var hit = fleet[o].FirstOrDefault(s => s.Cells.Contains(cell));
@@ -123,7 +152,7 @@ namespace GlamourGames
                 Tm.After(1.5f, () =>
                 {
                     if (g != gen) return; busy = false;
-                    if (VsCpu) StartAttack(o);
+                    if (VsCpu || Remote) StartAttack(o);
                     else ToPass(o, () => { ph = Ph.Attack; status = $"{PName(o)} - Feuer frei!"; BuildUi(); });
                 });
             }
@@ -154,7 +183,7 @@ namespace GlamourGames
             {
                 if (ph != Ph.Over || g != gen) return;
                 parade = new DiceParade(this, p, new[] { C.Cyan, C.Pink }, new[] { PName(0), PName(1) }, new[] { score[0], score[1] }, PKind.Sailor, 1.35f);
-                showRes = () => { busy = false; Result($"{PName(p)} GEWINNT!", $"Alle Schiffe von {PName(1 - p)} versenkt", p == 0 ? C.Cyan : C.Pink, new List<string> { $"Stand: {score[0]} : {score[1]}" }, ("Nochmal", C.Green, NextRound), ("Menü", C.Purple, () => App.Go(new Menu()))); };
+                showRes = () => { busy = false; Result($"{PName(p)} GEWINNT!", $"Alle Schiffe von {PName(1 - p)} versenkt", p == 0 ? C.Cyan : C.Pink, new List<string> { $"Stand: {score[0]} : {score[1]}" }, ("Nochmal", C.Green, netNext), ("Menü", C.Purple, () => App.Go(new Menu()))); };
             });
         }
         public override void Update(float dt)
@@ -296,7 +325,7 @@ namespace GlamourGames
             int p = cur, o = 1 - p;
             Water(c, GX, GY, GS, true);
             // gegen den Computer: beim Computerzug sieht der Mensch die eigene Flotte
-            if (VsCpu && o == 0) foreach (var s in fleet[0]) if (!s.Sunk) { var r = Cell(s.Cells[0]); Afloat(c, s, r.Left + 3, r.Top + 3, GS - 6); }
+            if ((VsCpu || Remote) && o == 0) foreach (var s in fleet[0]) if (!s.Sunk) { var r = Cell(s.Cells[0]); Afloat(c, s, r.Left + 3, r.Top + 3, GS - 6); }
             foreach (var s in fleet[o]) if (s.Sunk)
                 {
                     var r = Cell(s.Cells[0]); float st = sink.TryGetValue(s, out var q) ? q : 9;

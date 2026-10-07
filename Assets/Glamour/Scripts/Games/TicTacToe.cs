@@ -24,8 +24,9 @@ namespace GlamourGames
         public override void Enter()
         {
             base.Enter();
+            netNewMatch = Shared("newmatch", NewMatch); netNextRound = Shared("nextround", () => { roundEnd = false; NewRound(); });
             Opponents.AddSwitch(this, OppKey, 40, 680, 260, 70, NewMatch);
-            Ui.Add(new Button(40, 780, 260, 62, "Punkte zurück", C.Purple, NewMatch, 22));
+            Ui.Add(new Button(40, 780, 260, 62, "Punkte zurück", C.Purple, () => netNewMatch(), 22));
             Opponents.Pick(this, OppKey, o => StartMatch());
         }
         void NewMatch() { points = new int[3]; wins = new int[3]; StartMatch(); }
@@ -41,7 +42,10 @@ namespace GlamourGames
         }
         bool CpuTurn => VsCpu && cur == 2 && !over && !tossing;
         /// <summary>Mensch darf nicht klicken, solange der Computer am Zug ist oder nachdenkt.</summary>
-        bool Locked => CpuTurn || CpuThinking || cpuAim >= 0;
+        bool Locked => CpuTurn || CpuThinking || cpuAim >= 0 || RemoteTurn;
+        // Bluetooth: Platz 2 ist der Mitspieler am anderen Geraet
+        bool RemoteTurn => Remote && cur == 2 && !over && !tossing; Action netNewMatch, netNextRound;
+        public override void NetRecv(string kind, string[] a) { if (kind == "place") { if (RemoteTurn) Place(Link.Int(a[0])); } else base.NetRecv(kind, a); }
         public override bool WantsHand => hover >= 0 && !Locked;
         public override void MouseMove(float x, float y) { hover = -1; if (over || Modal != null || Locked) return; for (int i = 0; i < 9; i++) if (Cell(i).Contains(x, y) && b[i] == 0) hover = i; }
         public override void MouseUp(float x, float y) { if (Locked) return; if (hover >= 0) Place(hover); }
@@ -64,6 +68,7 @@ namespace GlamourGames
         void Place(int i)
         {
             if (over || b[i] != 0 || lockIn) return;
+            if (Remote && cur == 1) Net("place", i);
             b[i] = cur; stampT[i] = Time; hover = -1; Sfx.Play(cur == 1 ? S.PlaceX : S.PlaceO); var r = Cell(i); Fx.Burst(r.MidX, r.MidY, 14, new[] { cur == 1 ? C.Cyan : C.Pink }, 200);
             Fx.Ring(r.MidX, r.MidY, cur == 1 ? C.Cyan : C.Pink, 18, 160);
             win = Lines.FirstOrDefault(l => b[l[0]] != 0 && b[l[0]] == b[l[1]] && b[l[1]] == b[l[2]]);
@@ -94,12 +99,12 @@ namespace GlamourGames
             if (w > 0)
             {
                 points[w] += 8; Sfx.Play(S.Big); Celebrate(w == 1 ? C.Cyan : C.Pink, 5, 1.1f); App.Shake(10);
-                Action show = () => Result($"{PName(w - 1)} gewinnt die RUNDE!", $"Ergebnis {rw[1]}:{rw[2]}  -  +8 Punkte", w == 1 ? C.Cyan : C.Pink, ("Nächste Runde", C.Green, () => { roundEnd = false; NewRound(); }), ("Menü", C.Purple, () => App.Go(new Menu())));
+                Action show = () => Result($"{PName(w - 1)} gewinnt die RUNDE!", $"Ergebnis {rw[1]}:{rw[2]}  -  +8 Punkte", w == 1 ? C.Cyan : C.Pink, ("Nächste Runde", C.Green, netNextRound), ("Menü", C.Purple, () => App.Go(new Menu())));
                 // Highscore nur fuer Menschen (der Computer traegt sich nicht ein)
-                bool human = !(VsCpu && w == 2);
+                bool human = !((VsCpu || Remote) && w == 2);
                 Tm.After(3f, () => { if (g != gen) return; if (human && Save.IsHigh("hs_ttt", points[w])) NameEntry("hs_ttt", points[w], "NEUER HIGHSCORE!", show); else show(); });
             }
-            else Result("Runde unentschieden", $"Ergebnis {rw[1]}:{rw[2]}", C.Gold, ("Nächste Runde", C.Green, () => { roundEnd = false; NewRound(); }), ("Menü", C.Purple, () => App.Go(new Menu())));
+            else Result("Runde unentschieden", $"Ergebnis {rw[1]}:{rw[2]}", C.Gold, ("Nächste Runde", C.Green, netNextRound), ("Menü", C.Purple, () => App.Go(new Menu())));
         }
         public override void Update(float dt)
         {

@@ -13,12 +13,48 @@ namespace GlamourGames
         List<(int x, int y)> body = new List<(int x, int y)>(), prev = new List<(int x, int y)>(); (int x, int y) dir = (1, 0), next = (1, 0), food; int score, best; float speed = .17f, acc; bool running, dead, started; float deadT, eatT; readonly Queue<(int, int)> turns = new Queue<(int, int)>();
         // Duell: Computer-Schlange (pink), startet gegenueber
         List<(int x, int y)> body2 = new List<(int x, int y)>(), prev2 = new List<(int x, int y)>(); (int x, int y) dir2 = (-1, 0); int score2; bool dead1, dead2; int gen;
-        bool Duel => VsCpu;
+        bool Duel => VsCpu || Remote;
+        // Bluetooth-Duell: der Host rechnet jeden Schritt, der Mitspieler meldet nur Richtungswechsel und erhaelt den Zustand (gespiegelt)
+        readonly Queue<(int x, int y)> turns2 = new Queue<(int x, int y)>(); Action netReset, netToggle;
+        bool NetClient => Remote && !Link.IsHost;
+        static string Cells(List<(int x, int y)> b) => string.Join(".", b.Select(c => c.x * N + c.y));
+        static List<(int x, int y)> Cells(string s) => s.Length == 0 ? new List<(int x, int y)>() : s.Split('.').Select(v => { int k = Link.Int(v); return (k / N, k % N); }).ToList();
+        public override void NetRecv(string kind, string[] a)
+        {
+            switch (kind)
+            {
+                case "dir": if (Link.IsHost && turns2.Count < 3) turns2.Enqueue((Link.Int(a[0]), Link.Int(a[1]))); break;
+                case "st": if (NetClient && !dead) ApplyState(a); break;
+                default: base.NetRecv(kind, a); break;
+            }
+        }
+        void SendState(bool e1, bool e2, bool d1, bool d2)
+        {
+            if (!Remote || !Link.IsHost) return;
+            Net("st", Cells(body), Cells(body2), food.x * N + food.y, score, score2, (e1 ? 1 : 0) + (e2 ? 2 : 0) + (d1 ? 4 : 0) + (d2 ? 8 : 0), dir.x, dir.y, dir2.x, dir2.y, Link.F(speed));
+        }
+        /// <summary>Mitspieler: Zustand des Hosts uebernehmen (eigene Schlange = Platz 2 des Hosts).</summary>
+        void ApplyState(string[] a)
+        {
+            prev = body.ToList(); prev2 = body2.ToList(); body = Cells(a[1]); body2 = Cells(a[0]);
+            while (prev.Count < body.Count) prev.Add(prev.Count > 0 ? prev[prev.Count - 1] : body[prev.Count]);
+            while (prev2.Count < body2.Count) prev2.Add(prev2.Count > 0 ? prev2[prev2.Count - 1] : body2[prev2.Count]);
+            int fk = Link.Int(a[2]); food = (fk / N, fk % N); score = Link.Int(a[4]); score2 = Link.Int(a[3]); int fl = Link.Int(a[5]);
+            dir = (Link.Int(a[8]), Link.Int(a[9])); dir2 = (Link.Int(a[6]), Link.Int(a[7])); speed = Link.Flt(a[10]); acc = 0; running = true; started = true;
+            if ((fl & 2) != 0) EatFx(0); if ((fl & 1) != 0) EatFx(1);
+            if ((fl & 12) != 0) DieDuel((fl & 8) != 0, (fl & 4) != 0); else Sfx.Play(S.Tick, .12f);
+        }
+        void EatFx(int who)
+        {
+            eatT = 0; Sfx.Play(S.Eat); var fc = P(body.Count > 0 && who == 0 ? body[0] : body2.Count > 0 ? body2[0] : food);
+            Fx.Burst(fc.X, fc.Y, 24, who == 0 ? new[] { C.Yellow, C.Green, Col.White } : new[] { C.Yellow, C.Pink, Col.White }, 260); Pop("+1", fc.X, fc.Y - 20, who == 0 ? C.Yellow : C.Pink.Light(.4f), 34);
+        }
         static readonly Col Pink2 = new Col(150, 10, 90);
         public override void Enter()
         {
             base.Enter(); best = Save.Int("sn_best", 0);
-            Ui.Add(new Button(40, 700, 260, 62, "Neustart", C.Green, Reset, 24)); Ui.Add(new Button(40, 780, 260, 62, "Start / Pause", C.Cyan, Toggle, 24));
+            netReset = Shared("reset", Reset); netToggle = Shared("toggle", Toggle);
+            Ui.Add(new Button(40, 700, 260, 62, "Neustart", C.Green, () => netReset(), 24)); Ui.Add(new Button(40, 780, 260, 62, "Start / Pause", C.Cyan, () => netToggle(), 24));
             (string t, float x, float y, Key k)[] pad = { ("▲", 1360, 560, Key.Up), ("▼", 1360, 780, Key.Down), ("◀", 1250, 670, Key.Left), ("▶", 1470, 670, Key.Right) };
             foreach (var (t, x, y, k) in pad) { var kk = k; Ui.Add(new Button(x, y, 110, 110, t, C.Green, () => KeyDown(kk), 46) { Alpha = .6f }); }
             Opponents.AddSwitch(this, OppKey, 1290, 150, 260, 70, Reset, "Solo");
@@ -27,9 +63,10 @@ namespace GlamourGames
         }
         void Reset()
         {
-            gen++; rag1 = rag2 = null; body = new List<(int x, int y)> { (4, 8), (3, 8), (2, 8) }; prev = body.ToList(); dir = next = (1, 0); turns.Clear(); score = 0; speed = .17f; acc = 0; running = false; dead = false; started = false; Modal = null;
+            gen++; rag1 = rag2 = null; turns2.Clear(); body = new List<(int x, int y)> { (4, 8), (3, 8), (2, 8) }; prev = body.ToList(); dir = next = (1, 0); turns.Clear(); score = 0; speed = .17f; acc = 0; running = false; dead = false; started = false; Modal = null;
             score2 = 0; dead1 = dead2 = false; dir2 = (-1, 0);
             body2 = Duel ? new List<(int x, int y)> { (N - 5, N - 9), (N - 4, N - 9), (N - 3, N - 9) } : new List<(int x, int y)>(); prev2 = body2.ToList();
+            if (NetClient) { (body, body2) = (body2, body); (dir, dir2) = (dir2, dir); next = dir; prev = body.ToList(); prev2 = body2.ToList(); }
             PlaceFood();
         }
         void Toggle() { if (dead) { Reset(); return; } running = !running; started = true; Sfx.Play(S.Turn); }
@@ -42,9 +79,10 @@ namespace GlamourGames
         public override void KeyDown(Key k)
         {
             (int, int)? d = k switch { Key.Up or Key.W => (0, -1), Key.Down or Key.S => (0, 1), Key.Left or Key.A => (-1, 0), Key.Right or Key.D => (1, 0), _ => null };
-            if (k == Key.Space || k == Key.Enter) { Toggle(); return; }
+            if (k == Key.Space || k == Key.Enter) { netToggle(); return; }
             if (d == null || dead) return;
-            if (!running && !started) { running = true; started = true; }
+            if (NetClient) { if (!started) netToggle(); Net("dir", d.Value.Item1, d.Value.Item2); return; }
+            if (!running && !started) { if (Remote) netToggle(); else { running = true; started = true; } }
             (int x, int y) last = turns.Count > 0 ? turns.Last() : dir; if (turns.Count < 3 && !(d.Value.Item1 == -last.x && d.Value.Item2 == -last.y) && d.Value != last) turns.Enqueue(d.Value);
         }
         Pt sw; bool swActive;
@@ -80,16 +118,19 @@ namespace GlamourGames
         /// <summary>Beide Schlangen ziehen gleichzeitig; wer gegen Wand/Koerper faehrt, verliert, Kopf an Kopf = Unentschieden.</summary>
         void TickDuel()
         {
-            dir2 = SnakeAI.Decide(N, body2, dir2, body, food, (int)Opp, Rng.Shared); prev2 = body2.ToList();
+            if (Remote) { if (turns2.Count > 0) { var t2 = turns2.Dequeue(); if (!(t2.x == -dir2.x && t2.y == -dir2.y)) dir2 = t2; } }
+            else dir2 = SnakeAI.Decide(N, body2, dir2, body, food, (int)Opp, Rng.Shared);
+            prev2 = body2.ToList();
             var h1 = (x: body[0].x + dir.x, y: body[0].y + dir.y); var h2 = (x: body2[0].x + dir2.x, y: body2[0].y + dir2.y);
             bool e1 = h1 == food, e2 = h2 == food;
             bool d1 = Out(h1) || body.Take(body.Count - 1).Contains(h1) || body2.Take(body2.Count - (e2 ? 0 : 1)).Contains(h1);
             bool d2 = Out(h2) || body2.Take(body2.Count - 1).Contains(h2) || body.Take(body.Count - (e1 ? 0 : 1)).Contains(h2);
             if (h1 == h2 || (h1 == body2[0] && h2 == body[0])) d1 = d2 = true;
-            if (d1 || d2) { DieDuel(d1, d2); return; }
+            if (d1 || d2) { SendState(false, false, d1, d2); DieDuel(d1, d2); return; }
             body.Insert(0, h1); body2.Insert(0, h2);
             if (e1) Eat(0); else body.RemoveAt(body.Count - 1);
             if (e2) Eat(1); else body2.RemoveAt(body2.Count - 1);
+            SendState(e1, e2, false, false);
             Sfx.Play(S.Tick, .12f);
         }
         // Physik beim Crash: der Kopf prallt ab, der Koerper laeuft mit seiner Geschwindigkeit nach (Traegheit), staucht sich
@@ -134,7 +175,8 @@ namespace GlamourGames
         public override void Update(float dt)
         {
             eatT += dt; if (dead) { deadT += dt; rag1?.Update(dt); rag2?.Update(dt); return; }
-            if (running) { acc += dt; while (acc >= speed && running) { acc -= speed; Tick(); } }
+            if (running && NetClient) acc = Math.Min(acc + dt, speed);   // Mitspieler: nur zwischen den Zustaenden des Hosts gleiten
+            else if (running) { acc += dt; while (acc >= speed && running) { acc -= speed; Tick(); } }
             if (running && Rng.F() < dt * 30) { var h = Pos(body, prev, 0); Fx.Spark(h.X, h.Y, C.Green, 1, 30); }
             if (running && Duel && body2.Count > 0 && Rng.F() < dt * 30) { var h = Pos(body2, prev2, 0); Fx.Spark(h.X, h.Y, C.Pink, 1, 30); }
         }

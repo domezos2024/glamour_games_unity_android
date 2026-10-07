@@ -369,12 +369,25 @@ namespace GlamourGames
         static readonly Pt[] Seat = { new Pt(340, 545), new Pt(1060, 545), new Pt(700, 215) };
         // Generationszaehler: alte geplante Computeraktionen feuern nicht ins neue Spiel
         int gen; bool awaitHuman, hotseat; readonly HashSet<int> hlCards = new HashSet<int>();
+        // Bluetooth: feste Plaetze (0 = Host, 1 = Beitretender, 2 = Computer). Mischen und Dealer-Button per gemeinsamem
+        // Startwert; menschliche Zuege und die Computerzuege (rechnet der Host) werden uebertragen und der Reihe nach angewandt
+        int MySeat => Remote && !Link.IsHost ? 1 : 0; Random pokerRnd = Rng.Shared; int games; Action netHand, netNew;
+        readonly Queue<(int seat, string act, int to)> netMoves = new Queue<(int, string, int)>();
+        string SeatName(int i) => i == MySeat ? Pl.Name(0) : Link.PeerName;
+        public override void NetRecv(string kind, string[] a)
+        {
+            if (kind == "mv") { netMoves.Enqueue((Link.Int(a[0]), a[1], Link.Int(a[2]))); return; }
+            base.NetRecv(kind, a);
+        }
+        /// <summary>Wartet im Ablauf auf den uebertragenen Zug fuer Platz seat.</summary>
+        bool TakeNet(int seat) { if (netMoves.Count == 0 || netMoves.Peek().seat != seat) return false; var m = netMoves.Dequeue(); pending = (m.act, m.to); return true; }
         PokerLevel Lvl => Opp switch { Opponent.Easy => PokerLevel.Easy, Opponent.Medium => PokerLevel.Medium, Opponent.Hard => PokerLevel.Hard, _ => PokerLevel.Original };
 
         public override void Enter()
         {
             base.Enter();
-            bNew = Ui.Add(new Button(40, 790, 230, 56, "Neues Spiel", C.Purple, () => NewGame(), 22)); bNext = Ui.Add(new Button(560, 785, 280, 72, "Nächste Hand", C.Green, () => { if (!inHand && !Co.Busy && !gameOver) Co.Start(HandCo()); }, 30));
+            netHand = Shared("hand", () => { if (!inHand && !gameOver) Co.Start(HandCo()); }); netNew = Shared("new", NewGame);
+            bNew = Ui.Add(new Button(40, 790, 230, 56, "Neues Spiel", C.Purple, () => netNew(), 22)); bNext = Ui.Add(new Button(560, 785, 280, 72, "Nächste Hand", C.Green, () => { if (!inHand && !Co.Busy && !gameOver) netHand(); }, 30));
             bFold = Ui.Add(new Button(330, 792, 190, 66, "FOLD", C.Red, () => Act("fold", 0), 28)); bCall = Ui.Add(new Button(540, 792, 250, 66, "CHECK", C.Cyan, () => Act("call", 0), 28)); bRaise = Ui.Add(new Button(810, 792, 300, 66, "RAISE", C.Gold, () => Act("raise", sliderVal), 26));
             bMin = Ui.Add(new Button(330, 738, 90, 40, "Min", C.Purple, () => Quick("min"), 18)); bHalf = Ui.Add(new Button(430, 738, 100, 40, "½ Pot", C.Purple, () => Quick("half"), 18)); bPot = Ui.Add(new Button(540, 738, 90, 40, "Pot", C.Purple, () => Quick("pot"), 18)); bAll = Ui.Add(new Button(640, 738, 110, 40, "All-In", C.Orange, () => Quick("all"), 18));
             bShow = Ui.Add(new Button(600, 600, 400, 80, "Karten zeigen", C.Green, () => overlayDone = true, 32) { Visible = false });
@@ -382,13 +395,14 @@ namespace GlamourGames
             Opp = Opponents.Load(OppKey); NewGame();
             Opponents.Pick(this, OppKey, o => NewGame());
         }
-        void Act(string a, int to) { if (HumanTurn) pending = (a, to); }
+        void Act(string a, int to) { if (!HumanTurn) return; if (Remote) Net("mv", toAct, a, to); pending = (a, to); }
         void NewGame()
         {
-            gen++; Co.Clear(); pending = null; overlay = null; awaitHuman = false; hlCards.Clear();
-            pl = VsCpu ? new[] { Mk(PName(0), true), Mk(PName(1) + " 1", false), Mk(PName(1) + " 2", false) } : new[] { Mk(PName(0), true), Mk(PName(1), true), Mk("Computer", false) };
+            gen++; Co.Clear(); pending = null; overlay = null; awaitHuman = false; hlCards.Clear(); netMoves.Clear();
+            pokerRnd = Remote ? new Random(Link.Seed * 13 + games++) : Rng.Shared;
+            pl = Remote ? new[] { Mk(SeatName(0), true), Mk(SeatName(1), true), Mk("Computer", false) } : VsCpu ? new[] { Mk(PName(0), true), Mk(PName(1) + " 1", false), Mk(PName(1) + " 2", false) } : new[] { Mk(PName(0), true), Mk(PName(1), true), Mk("Computer", false) };
             hotseat = pl.Count(p => p.Human) > 1;
-            button = Rng.I(3); handNo = 0; board.Clear(); inHand = false; gameOver = false; revealed = -1; winners.Clear(); showAll = false; toAct = -1; log.Clear(); if (Modal != null && Modal.Title != "Gegner wählen") Modal = null;
+            button = pokerRnd.Next(3); handNo = 0; board.Clear(); inHand = false; gameOver = false; revealed = -1; winners.Clear(); showAll = false; toAct = -1; log.Clear(); if (Modal != null && Modal.Title != "Gegner wählen") Modal = null;
             Lg($"Neues Spiel - jeder startet mit {Start} Chips."); if (VsCpu) Lg($"Computer-Stärke: {Opponents.Label(Opp)}"); msg = "Neues Spiel! \"Nächste Hand\" drücken.";
         }
         static P Mk(string n, bool h) => new P { Name = n, Human = h, Chips = Start };
@@ -397,7 +411,7 @@ namespace GlamourGames
         static string CT(PokerCard c) => PokerEval.CT(c);
         int Next(int i, Func<P, bool> f) { for (int k = 1; k <= 3; k++) { int j = (i + k) % 3; if (f(pl[j])) return j; } return -1; }
         int Pot => pl.Sum(p => p.Total); List<P> ActiveIn => pl.Where(p => !p.Out && !p.Folded).ToList();
-        List<PokerCard> NewDeck() { var d = new List<PokerCard>(); for (int s = 0; s < 4; s++) for (int r = 2; r <= 14; r++) d.Add(new PokerCard(r, s)); Rng.Shuffle(d); return d; }
+        List<PokerCard> NewDeck() { var d = new List<PokerCard>(); for (int s = 0; s < 4; s++) for (int r = 2; r <= 14; r++) d.Add(new PokerCard(r, s)); Rng.Shuffle(d, pokerRnd); return d; }
         PokerCard Draw() { var c = deck[deck.Count - 1]; deck.RemoveAt(deck.Count - 1); return c; }
         static (long score, int cat, string name) Eval(IEnumerable<PokerCard> cards) => PokerEval.Eval(cards);
 
@@ -450,7 +464,7 @@ namespace GlamourGames
             handNo++; int lvl = Math.Min(Blinds.Length - 1, (handNo - 1) / PerLevel); (sb, bb) = Blinds[lvl]; if ((handNo - 1) % PerLevel == 0 && handNo > 1) Lg($"Blinds steigen auf {sb}/{bb}.");
             foreach (var p in pl) { p.Hole.Clear(); p.Bet = p.Total = p.Raises = 0; p.Folded = p.Out; p.AllIn = p.Acted = false; p.CanRaise = true; p.LastAct = p.HandName = ""; p.Flip[0].Snap(0); p.Flip[1].Snap(0); p.G = new Glide[2]; }
             button = Next(button, p => !p.Out); bool heads = alive.Count == 2; sbI = heads ? button : Next(button, p => !p.Out); bbI = Next(sbI, p => !p.Out);
-            deck = NewDeck(); board.Clear(); for (int k = 0; k < 5; k++) { bflip[k].Snap(0); bt[k] = 0; bg[k] = null; } winners.Clear(); hlCards.Clear(); revealed = hotseat ? -1 : 0; showAll = false; inHand = true; street = "preflop"; handT = 0;
+            deck = NewDeck(); board.Clear(); for (int k = 0; k < 5; k++) { bflip[k].Snap(0); bt[k] = 0; bg[k] = null; } winners.Clear(); hlCards.Clear(); revealed = Remote ? MySeat : hotseat ? -1 : 0; showAll = false; inHand = true; street = "preflop"; handT = 0;
             Post(sbI, sb, "SB"); Post(bbI, bb, "BB"); curBet = bb; lastRaise = bb; for (int k = 0; k < 2; k++) foreach (var p in pl) if (!p.Out) p.Hole.Add(Draw());
             Lg($"- Hand {handNo} - Blinds {sb}/{bb} - Dealer: {pl[button].Name}"); Sfx.Play(S.Deal); Sfx.Play(S.Chip); toAct = Next(bbI, p => !p.Out && !p.Folded && !p.AllIn); msg = $"Hand {handNo} - Blinds {sb}/{bb}"; yield return .9f;
             bool skip = false;
@@ -468,10 +482,22 @@ namespace GlamourGames
                 }
                 if (toAct < 0 || pl[toAct].Folded || pl[toAct].AllIn || pl[toAct].Out) toAct = Next(toAct < 0 ? button : toAct, p => !p.Out && !p.Folded && !p.AllIn);
                 var cur = pl[toAct];
-                if (cur.Human)
+                if (Remote && toAct != MySeat && (cur.Human || !Link.IsHost))
+                {
+                    // Mitspieler oder (beim Beitretenden) der vom Host gerechnete Computer: Zug kommt per Bluetooth
+                    msg = $"{cur.Name} {(cur.Human ? "ist dran" : "überlegt")} ..."; pending = null; int seat = toAct;
+                    yield return (Func<bool>)(() => TakeNet(seat));
+                }
+                else if (Remote && !cur.Human)
+                {
+                    msg = $"{cur.Name} überlegt ..."; pending = null; int g0 = gen, seat = toAct;
+                    CpuThink(Opponents.ThinkTime(Opponent.Medium), () => { if (g0 != gen || !inHand || toAct != seat || pending != null) return; var d = CpuDecide(seat); Net("mv", seat, d.act, d.to); pending = d; });
+                    yield return (Func<bool>)(() => pending != null);
+                }
+                else if (cur.Human)
                 {
                     var humans = pl.Where(q => q.Human && !q.Out && !q.Folded).ToList();
-                    if (hotseat && (humans.Count > 1 || revealed != toAct)) { revealed = -1; overlay = (cur.Name + " ist am Zug", "Platz tauschen - dann Karten zeigen"); overlayDone = false; msg = ""; yield return (Func<bool>)(() => overlayDone); overlay = null; }
+                    if (!Remote && hotseat && (humans.Count > 1 || revealed != toAct)) { revealed = -1; overlay = (cur.Name + " ist am Zug", "Platz tauschen - dann Karten zeigen"); overlayDone = false; msg = ""; yield return (Func<bool>)(() => overlayDone); overlay = null; }
                     revealed = toAct;
                     SetupRaise(); pending = null; msg = $"{cur.Name} ist dran - zu zahlen: {Legal(toAct).toCall}"; Sfx.Play(S.Turn, .5f);
                     awaitHuman = true; yield return (Func<bool>)(() => pending != null); awaitHuman = false;
@@ -546,11 +572,11 @@ namespace GlamourGames
             {
                 // Solo gegen zwei Computer: Mensch ist raus
                 var h = pl[0]; Sfx.Play(S.Lose); App.Shake(8); Lg($"{h.Name} ist ausgeschieden.");
-                Tm.After(1.2f, () => { if (g0 == gen) Result($"{h.Name} ist ausgeschieden", $"nach {handNo} Händen", C.Red, ("Neues Spiel", C.Green, NewGame), ("Menü", C.Purple, () => App.Go(new Menu()))); });
+                Tm.After(1.2f, () => { if (g0 == gen) Result($"{h.Name} ist ausgeschieden", $"nach {handNo} Händen", C.Red, ("Neues Spiel", C.Green, netNew), ("Menü", C.Purple, () => App.Go(new Menu()))); });
                 return;
             }
             var w = alive[0]; Sfx.Play(S.Big); Celebrate(w.Human ? C.Gold : C.Red, 5, 1.2f, $"{w.Name} gewinnt!"); Lg($"TURNIERSIEG: {w.Name}");
-            Tm.After(3f, () => { if (g0 == gen) Result($"{w.Name} gewinnt das Turnier!", $"nach {handNo} Händen", w.Human ? C.Gold : C.Red, ("Neues Spiel", C.Green, NewGame), ("Menü", C.Purple, () => App.Go(new Menu()))); });
+            Tm.After(3f, () => { if (g0 == gen) Result($"{w.Name} gewinnt das Turnier!", $"nach {handNo} Händen", w.Human ? C.Gold : C.Red, ("Neues Spiel", C.Green, netNew), ("Menü", C.Purple, () => App.Go(new Menu()))); });
         }
 
         // ---- Eingabe ----
@@ -565,8 +591,8 @@ namespace GlamourGames
         public override void KeyDown(Key k)
         {
             if (overlay != null) { if (k == Key.Space || k == Key.Enter) overlayDone = true; return; }
-            if (!HumanTurn) { if (k == Key.Space && bNext.Visible) Co.Start(HandCo()); return; }
-            if (k == Key.F) pending = ("fold", 0); else if (k == Key.C || k == Key.Space) pending = ("call", 0);
+            if (!HumanTurn) { if (k == Key.Space && bNext.Visible) netHand(); return; }
+            if (k == Key.F) Act("fold", 0); else if (k == Key.C || k == Key.Space) Act("call", 0);
         }
         public override Pt ThinkPos => pl != null && toAct >= 0 && !pl[toAct].Human ? (toAct == 2 ? new Pt(1080, 160) : new Pt(Seat[toAct].X, 724)) : base.ThinkPos;
         public override void Update(float dt)

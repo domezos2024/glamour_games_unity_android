@@ -26,19 +26,45 @@ namespace GlamourGames
         // Generationszähler gegen verspätete Computeraktionen nach Neustart
         int gen; bool cpuBusy, cpuBetDone = true;
         bool CpuTurn => VsCpu && turn == 1;
+        // Bluetooth: feste Plaetze (Host links, Beitretender rechts), weil die Zugreihenfolge am Tisch zaehlt; gemeinsamer
+        // Kartenschlitten durch den Startwert des Hosts; Guthaben gilt nur fuer die Bluetooth-Partie (wird nicht gespeichert)
+        int MySeat => Remote && !Link.IsHost ? 1 : 0;
+        bool Locked => CpuTurn || Remote && turn >= 0 && turn != MySeat;
+        string SeatName(int i) => Remote ? (i == MySeat ? Pl.Name(0) : Link.PeerName) : PName(i);
+        int shoes; Action netDeal, netRound, netRefill, netReset;
+        public override void NetRecv(string kind, string[] a)
+        {
+            switch (kind)
+            {
+                case "bet": if (phase == "betting") Bet(1 - MySeat, Link.Int(a[0]), true); break;
+                case "hit": case "stand": case "double": NetAct(kind, 0); break;
+                default: base.NetRecv(kind, a); break;
+            }
+        }
+        /// <summary>Zug des Mitspielers ausfuehren, sobald er hier am Zug ist (laufende Kartenanimation abwarten).</summary>
+        void NetAct(string kind, float waited)
+        {
+            if (turn != 1 - MySeat || (phase != "p0" && phase != "p1")) { if (waited < 15) { int g = gen; Tm.After(.1f, () => { if (g == gen) NetAct(kind, waited + .1f); }); } return; }
+            if (kind == "hit") Co.Start(Hit()); else if (kind == "stand") Stand(); else Co.Start(Double());
+        }
+        void LocalAct(string kind) { if (Locked) return; if (Remote) Net(kind); if (kind == "hit") Co.Start(Hit()); else if (kind == "stand") Stand(); else Co.Start(Double()); }
 
         public override void Enter()
         {
-            base.Enter(); for (int i = 0; i < 2; i++) { int k = i; float cx = PX[i]; bm[i] = Ui.Add(new Button(cx + 60, 700, 70, 46, "-10", C.Purple, () => Bet(k, -10), 22)); bp[i] = Ui.Add(new Button(cx + 140, 700, 70, 46, "+10", C.Purple, () => Bet(k, 10), 22)); }
+            base.Enter();
+            netDeal = Shared("deal", () => Co.Start(Deal())); netRound = Shared("round", NewRound);
+            netRefill = Shared("refill", () => { foreach (var h in pl) if (h.Credits < 10) { h.Credits = 1000; } Persist(); Sfx.Play(S.Coin); });
+            netReset = Shared("reset", ResetAll);
+            for (int i = 0; i < 2; i++) { int k = i; float cx = PX[i]; bm[i] = Ui.Add(new Button(cx + 60, 700, 70, 46, "-10", C.Purple, () => Bet(k, -10), 22)); bp[i] = Ui.Add(new Button(cx + 140, 700, 70, 46, "+10", C.Purple, () => Bet(k, 10), 22)); }
             bDeal = Ui.Add(new Button(650, 795, 300, 70, "AUSTEILEN", C.Green, HumanDeal, 32));
-            bHit = Ui.Add(new Button(440, 795, 220, 70, "KARTE", C.Cyan, () => { if (!CpuTurn) Co.Start(Hit()); }, 30)); bStand = Ui.Add(new Button(690, 795, 220, 70, "HALTEN", C.Orange, () => { if (!CpuTurn) Stand(); }, 30)); bDouble = Ui.Add(new Button(940, 795, 220, 70, "VERDOPPELN", C.Pink, () => { if (!CpuTurn) Co.Start(Double()); }, 26));
-            bRefill = Ui.Add(new Button(1180, 795, 250, 60, "Guthaben auffüllen", C.Gold, () => { foreach (var h in pl) if (h.Credits < 10) { h.Credits = 1000; } Persist(); Sfx.Play(S.Coin); }, 20));
+            bHit = Ui.Add(new Button(440, 795, 220, 70, "KARTE", C.Cyan, () => LocalAct("hit"), 30)); bStand = Ui.Add(new Button(690, 795, 220, 70, "HALTEN", C.Orange, () => LocalAct("stand"), 30)); bDouble = Ui.Add(new Button(940, 795, 220, 70, "VERDOPPELN", C.Pink, () => LocalAct("double"), 26));
+            bRefill = Ui.Add(new Button(1180, 795, 250, 60, "Guthaben auffüllen", C.Gold, () => netRefill(), 20));
             bNew = Ui.Add(new Button(40, 790, 230, 56, "Neues Spiel", C.Purple, AskNew, 22));
             oppBtn = Opponents.AddSwitch(this, OppKey, 1316, 14, 260, 70, NewMatch);
             LoadCredits(); msg = "Setzt eure Einsätze und drückt AUSTEILEN!";
             Opponents.Pick(this, OppKey, o => NewMatch());
         }
-        void LoadCredits() { for (int i = 0; i < 2; i++) { keys[i] = KeyFor(i); pl[i].Credits = Save.Int(keys[i], 1000); } }
+        void LoadCredits() { for (int i = 0; i < 2; i++) { keys[i] = KeyFor(i); pl[i].Credits = Remote ? 1000 : Save.Int(keys[i], 1000); } }
         /// <summary>Neues Match (auch nach Gegnerwechsel): laufende Runde abbrechen, Einsätze zurück, Guthaben des neuen Gegners laden.</summary>
         void NewMatch()
         {
@@ -48,22 +74,23 @@ namespace GlamourGames
         }
         void AskNew()
         {
-            Result("Neues Spiel?", "Guthaben und Kartenstapel werden zurückgesetzt", C.Pink, ("Ja, neu starten", C.Green, () =>
-            {
-                gen++; CancelCpuThink(); cpuBusy = false; Co.Clear(); Save.Set("bj_c0", 1000); Save.Set("bj_c1", 1000); Save.Set("bj_cpu", 1000);
-                LoadCredits(); shoe.Clear(); foreach (var h in pl) h.Bet = 10; NewRound();
-            }), ("Abbrechen", C.Dim, null));
+            Result("Neues Spiel?", "Guthaben und Kartenstapel werden zurückgesetzt", C.Pink, ("Ja, neu starten", C.Green, () => netReset()), ("Abbrechen", C.Dim, null));
         }
-        void Persist() { for (int i = 0; i < 2; i++) Save.Set(keys[i], pl[i].Credits); }
-        void Bet(int i, int d) { if (phase != "betting") return; pl[i].Bet = Math.Clamp(pl[i].Bet + d, 10, Math.Max(10, pl[i].Credits)); Sfx.Play(S.Chip); }
+        void ResetAll()
+        {
+            gen++; CancelCpuThink(); cpuBusy = false; Co.Clear(); if (!Remote) { Save.Set("bj_c0", 1000); Save.Set("bj_c1", 1000); Save.Set("bj_cpu", 1000); }
+            LoadCredits(); shoe.Clear(); foreach (var h in pl) h.Bet = 10; NewRound();
+        }
+        void Persist() { if (Remote) return; for (int i = 0; i < 2; i++) Save.Set(keys[i], pl[i].Credits); }
+        void Bet(int i, int d, bool fromNet = false) { if (phase != "betting") return; if (Remote && !fromNet) { if (i != MySeat) return; Net("bet", d); } pl[i].Bet = Math.Clamp(pl[i].Bet + d, 10, Math.Max(10, pl[i].Credits)); Sfx.Play(S.Chip); }
         static int Val(List<Card> cs) => BlackjackAI.Total(cs.Select(c => c.Rank), out _);
         static bool IsBJ(List<Card> cs) => cs.Count == 2 && Val(cs) == 21;
-        void BuildShoe() { shoe.Clear(); for (int d = 0; d < 4; d++) for (int s = 0; s < 4; s++) foreach (var r in CardArt.Ranks) shoe.Add((r, s)); Rng.Shuffle(shoe); }
+        void BuildShoe() { shoe.Clear(); for (int d = 0; d < 4; d++) for (int s = 0; s < 4; s++) foreach (var r in CardArt.Ranks) shoe.Add((r, s)); Rng.Shuffle(shoe, Remote ? new Random(Link.Seed * 7 + shoes++) : null); }
         IEnumerator<object> DealTo(List<Card> hand, bool up)
         {
             var (r, s) = shoe[shoe.Count - 1]; shoe.RemoveAt(shoe.Count - 1); var c = new Card { Rank = r, Suit = s, X = Shoe.X, Y = Shoe.Y, SX = Shoe.X, SY = Shoe.Y, Up = up, Rot = 20 }; hand.Add(c); c.Flip.Target = up ? 1 : 0; Sfx.Play(S.Deal); shoeT = Time; yield return .34f;
         }
-        void HumanDeal() { if (VsCpu && !cpuBetDone) return; Co.Start(Deal()); }
+        void HumanDeal() { if (VsCpu && !cpuBetDone) return; if (phase == "betting" && !Co.Busy) netDeal(); }
         IEnumerator<object> Deal()
         {
             if (phase != "betting") yield break;
@@ -78,8 +105,8 @@ namespace GlamourGames
         }
         void Advance()
         {
-            if (pl[0].Status == "playing") { phase = "p0"; turn = 0; msg = PName(0) + " ist am Zug"; }
-            else if (pl[1].Status == "playing") { phase = "p1"; turn = 1; msg = PName(1) + " ist am Zug"; }
+            if (pl[0].Status == "playing") { phase = "p0"; turn = 0; msg = SeatName(0) + " ist am Zug"; }
+            else if (pl[1].Status == "playing") { phase = "p1"; turn = 1; msg = SeatName(1) + " ist am Zug"; }
             else { phase = "dealer"; turn = -1; Co.Start(DealerCo()); }
             if (turn >= 0) Sfx.Play(S.Turn, .5f);
         }
@@ -120,9 +147,9 @@ namespace GlamourGames
         void NewRound() { phase = "betting"; turn = -1; foreach (var h in pl) { h.Cards.Clear(); h.Status = "waiting"; h.Result = null; h.Bet = Math.Clamp(h.Bet, 10, Math.Max(10, h.Credits)); } dealer.Clear(); revealed = false; msg = "Setzt eure Einsätze und drückt AUSTEILEN!"; CpuBet(); }
         public override void KeyDown(Key k)
         {
-            if (phase == "betting" && (k == Key.Space || k == Key.Enter)) HumanDeal(); else if (phase == "payout" && (k == Key.Space || k == Key.Enter)) NewRound();
-            else if (CpuTurn) return;
-            else if (k == Key.H) Co.Start(Hit()); else if (k == Key.S) Stand(); else if (k == Key.D) Co.Start(Double());
+            if (phase == "betting" && (k == Key.Space || k == Key.Enter)) HumanDeal(); else if (phase == "payout" && (k == Key.Space || k == Key.Enter)) netRound();
+            else if (Locked) return;
+            else if (k == Key.H) LocalAct("hit"); else if (k == Key.S) LocalAct("stand"); else if (k == Key.D) LocalAct("double");
         }
 
         // ---------------------------------------------------------------- Computer-Gegner (Spieler 2)
@@ -166,10 +193,10 @@ namespace GlamourGames
         public override void Update(float dt)
         {
             bool bet = phase == "betting", pt = phase == "p0" || phase == "p1";
-            bDeal.Visible = bet || phase == "payout"; bDeal.Text = bet ? "AUSTEILEN" : "NEUE RUNDE"; bDeal.Click = bet ? (Action)HumanDeal : NewRound; bDeal.Col = bet ? C.Green : C.Cyan;
+            bDeal.Visible = bet || phase == "payout"; bDeal.Text = bet ? "AUSTEILEN" : "NEUE RUNDE"; bDeal.Click = bet ? (Action)HumanDeal : () => netRound(); bDeal.Col = bet ? C.Green : C.Cyan;
             bDeal.Enabled = !(bet && VsCpu && !cpuBetDone);
-            bHit.Visible = bStand.Visible = bDouble.Visible = pt; if (pt) { bDouble.Enabled = pl[turn].Cards.Count == 2 && pl[turn].Credits >= pl[turn].Bet && !CpuTurn; bHit.Text = $"KARTE (H)"; bHit.Enabled = bStand.Enabled = !CpuTurn; }
-            for (int i = 0; i < 2; i++) { bm[i].Visible = bp[i].Visible = bet && !(i == 1 && VsCpu); }
+            bHit.Visible = bStand.Visible = bDouble.Visible = pt; if (pt) { bDouble.Enabled = pl[turn].Cards.Count == 2 && pl[turn].Credits >= pl[turn].Bet && !Locked; bHit.Text = $"KARTE (H)"; bHit.Enabled = bStand.Enabled = !Locked; }
+            for (int i = 0; i < 2; i++) { bm[i].Visible = bp[i].Visible = bet && !(i == 1 && VsCpu) && !(Remote && i != MySeat); }
             bRefill.Visible = (phase == "betting" || phase == "payout") && pl.Any(p => p.Credits < 10);
             Place(dealer, 800, DY, dt); Place(pl[0].Cards, PX[0], PY, dt); Place(pl[1].Cards, PX[1], PY, dt);
             CpuDrive();
@@ -224,7 +251,7 @@ namespace GlamourGames
             stacks[i].Draw(c, Time, cx + 250 * (i == 0 ? 1 : -1), 610, 24, p.Bet > 0 ? (int)Math.Min(8, Math.Max(1, p.Bet / 10)) : 0, i == 0 ? C.Cyan : C.Pink, Col.White.Mix(i == 0 ? C.Cyan : C.Pink, .25f));
             DrawHand(c, p.Cards, i);
             var box = Gfx.Ctr(cx, 708, 440, 112); if (act) Gfx.Glow(c, box, 20, col, 16, .5f + .3f * MathF.Sin(Time * 5)); W.Panel(c, box, col);
-            Gfx.Text(c, PName(i) + (act ? "  -  am Zug" : ""), cx - 200, 676, 24, act ? col.Light(.4f) : Col.White, Al.L, true, act ? 6 : 0);
+            Gfx.Text(c, SeatName(i) + (act ? "  -  am Zug" : ""), cx - 200, 676, 24, act ? col.Light(.4f) : Col.White, Al.L, true, act ? 6 : 0);
             Gfx.Text(c, $"Guthaben: {p.Credits}", cx - 200, 712, 22, C.Gold, Al.L, false); Gfx.Text(c, $"Einsatz: {p.Bet}", cx - 200, 744, 22, Col.White, Al.L, true);
             if (i == 1 && VsCpu && phase == "betting") Gfx.Text(c, cpuBetDone ? "Einsatz steht" : "setzt ...", cx + 135, 723, 20, C.Pink.Light(.4f), Al.C, false);
             if (p.Result != null)

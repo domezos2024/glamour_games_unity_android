@@ -25,8 +25,9 @@ namespace GlamourGames
         public override void Enter()
         {
             base.Enter();
+            netNext = Shared("next", NextRound); netNew = Shared("newmatch", NewMatch);
             Opponents.AddSwitch(this, OppKey, 40, 585, 260, 70, NewMatch);
-            Ui.Add(new Button(40, 700, 260, 62, "Neue Runde", C.Green, NextRound, 24)); Ui.Add(new Button(40, 780, 260, 62, "Punkte zurück", C.Purple, NewMatch, 22));
+            Ui.Add(new Button(40, 700, 260, 62, "Neue Runde", C.Green, () => netNext(), 24)); Ui.Add(new Button(40, 780, 260, 62, "Punkte zurück", C.Purple, () => netNew(), 22));
             Opponents.Pick(this, OppKey, o => NewMatch());
         }
         int starter = 1;
@@ -45,7 +46,16 @@ namespace GlamourGames
             aiTask = null; cpuDue = false; cpuCol = -1; hoverCol = -1; CpuCheck();
         }
         bool CpuTurn => VsCpu && cur == 2 && over == 0 && !tossing;
-        bool Locked => CpuTurn || CpuThinking || cpuCol >= 0;
+        bool Locked => CpuTurn || CpuThinking || cpuCol >= 0 || RemoteTurn;
+        // Bluetooth: Platz 2 ist der Mitspieler; trifft sein Zug ein, waehrend hier noch ein Stein faellt, wird kurz gewartet
+        bool RemoteTurn => Remote && cur == 2 && over == 0 && !tossing; Action netNext, netNew;
+        public override void NetRecv(string kind, string[] a)
+        {
+            if (kind != "drop") { base.NetRecv(kind, a); return; }
+            if (over != 0) return;
+            if (busy || !RemoteTurn) { int g = gen; Tm.After(.08f, () => { if (g == gen) NetRecv(kind, a); }); return; }
+            Drop(Link.Int(a[0]));
+        }
         public override bool WantsHand => hoverCol >= 0;
         public override void MouseMove(float x, float y) { hoverCol = -1; if (over != 0 || busy || Modal != null || Locked) return; if (x > BX && x < BX + Cols * CS && y > BY - 100 && y < BY + Rows * CS + 30) hoverCol = (int)((x - BX) / CS); }
         public override void MouseUp(float x, float y) { if (parade != null && parade.T > 1.5f) { FireRes(); return; } if (Locked) return; if (hoverCol >= 0) Drop(hoverCol); }
@@ -89,6 +99,7 @@ namespace GlamourGames
         {
             if (over != 0 || busy || col < 0 || col >= Cols) return; int row = -1; for (int r = Rows - 1; r >= 0; r--) if (b[r * Cols + col] == 0) { row = r; break; }
             if (row < 0) { Sfx.Play(S.NoMatch, .5f); App.Shake(4); return; }
+            if (Remote && cur == 1) Net("drop", col);
             b[row * Cols + col] = cur; busy = true; discs.Add(new Disc { Col = col, Row = row, P = cur, Y = BY - CS, Vy = 0 }); Sfx.Play(S.Turn, .4f);
         }
         void Landed(Disc d)
@@ -105,10 +116,10 @@ namespace GlamourGames
                 {
                     if (g != gen || over != wp) return;
                     parade = new DiceParade(this, wp - 1, new[] { C.Cyan, C.Pink }, new[] { PName(0), PName(1) }, new[] { score[0], score[1] }, PKind.Disc, 1.35f);
-                    showRes = () => Result($"{PName(wp - 1)} gewinnt!", $"Stand: {score[0]} : {score[1]}", wp == 1 ? C.Cyan : C.Pink, ("Nächste Runde", C.Green, NextRound), ("Menü", C.Purple, () => App.Go(new Menu())));
+                    showRes = () => Result($"{PName(wp - 1)} gewinnt!", $"Stand: {score[0]} : {score[1]}", wp == 1 ? C.Cyan : C.Pink, ("Nächste Runde", C.Green, netNext), ("Menü", C.Purple, () => App.Go(new Menu())));
                 });
             }
-            else if (b.All(v => v != 0)) { over = 3; status = "UNENTSCHIEDEN!"; Sfx.Play(S.Lose); Tm.After(1.2f, () => { if (g == gen) Result("Unentschieden", $"Stand: {score[0]} : {score[1]}", C.Gold, ("Nochmal", C.Green, NextRound), ("Menü", C.Purple, () => App.Go(new Menu()))); }); }
+            else if (b.All(v => v != 0)) { over = 3; status = "UNENTSCHIEDEN!"; Sfx.Play(S.Lose); Tm.After(1.2f, () => { if (g == gen) Result("Unentschieden", $"Stand: {score[0]} : {score[1]}", C.Gold, ("Nochmal", C.Green, netNext), ("Menü", C.Purple, () => App.Go(new Menu()))); }); }
             else { cur = 3 - cur; status = $"{PName(cur - 1)} ist dran"; CpuCheck(); }
             busy = false;
             if (over == 0 && !Locked) MouseMove(App.MX, App.MY);

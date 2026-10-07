@@ -213,7 +213,28 @@ namespace GlamourGames
         int NLines { get => lnP[Pi]; set => lnP[Pi] = value; }
         void Store() { if (!duel) Save.Set("slot_cents", soloCredits); }
         static long LoadCents() => long.TryParse(Save.Str("slot_cents", "10000"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) ? v : 10000;
-        bool CpuTurn => duel && duelLive && !duelOver && turn == 1;
+        bool CpuTurn => duel && duelLive && !duelOver && turn == 1 && !Remote;
+        // Bluetooth-Duell: gemeinsamer Zufall (Startwert vom Host) -> gleiche Walzen-, Karten- und Leiterergebnisse auf beiden
+        // Geraeten; uebertragen werden nur die Aktionen des Spielers am Zug (auf Platz 2 sitzt der Mitspieler)
+        Random slotRnd = Rng.Shared; int duels; Action netDuel;
+        bool LocalNet => Remote && duel && turn == 0;
+        public override void NetRecv(string kind, string[] a) { if (kind == "spin" || kind == "take" || kind == "guess" || kind == "ladder" || kind == "half" || kind == "mode") NetDo(kind, a, 0); else base.NetRecv(kind, a); }
+        void NetDo(string kind, string[] a, float waited)
+        {
+            if (!Remote || !duel || duelOver) return;
+            bool idle = turn == 1 && turnReady && !spinning && !Co.Busy && !g.Busy && overlay == null;
+            bool ready = kind == "mode" ? turn == 1 : kind == "spin" ? idle && !g.Active : idle && g.Active;
+            if (!ready) { if (waited < 20) { int g0 = gen; Tm.After(.1f, () => { if (g0 == gen) NetDo(kind, a, waited + .1f); }); } return; }
+            switch (kind)
+            {
+                case "spin": LbIdx = Math.Clamp(Link.Int(a[0]), 0, LineBets.Length - 1); NLines = Math.Clamp(Link.Int(a[1]), 1, 10); Co.Start(SpinCo()); break;
+                case "take": Collect(false); break;
+                case "guess": Guess(a[0] == "1"); break;
+                case "ladder": LadderRisk(); break;
+                case "half": Half(); break;
+                case "mode": SetMode((GambleMode)Link.Int(a[0])); break;
+            }
+        }
         /// <summary>Darf der Mensch gerade bedienen? (Solo immer; Duell nur im eigenen Zug.)</summary>
         bool HumanOk => !duel || (duelLive && turnReady && !duelOver && turn == 0);
         int Round => Math.Min(DuelRounds, turnsDone / 2 + 1);
@@ -252,16 +273,17 @@ namespace GlamourGames
             bAuto = Ui.Add(new Button(1166, 725, 124, 54, "AUTO", C.Cyan, AutoToggle, 20));
             bRefill = Ui.Add(new Button(300, 730, 180, 56, "+100 € Spielgeld", C.Green, () => { if (duel) return; soloCredits += 10000; Store(); Sfx.Play(S.Coin); msg = "Spielgeld aufgefüllt"; }, 20) { Visible = false });
 
-            bTabCards = Ui.Add(new Button(1205, 116, 170, 36, "♠ KARTEN", C.Purple, () => { if (!HumanOk) return; SetMode(GambleMode.Cards); gModeHuman = gMode; Sfx.Play(S.Chip); }, 20) { Visible = false });
-            bTabLadder = Ui.Add(new Button(1390, 116, 170, 36, "🪜 LEITER", C.Gold, () => { if (!HumanOk) return; SetMode(GambleMode.Ladder); gModeHuman = gMode; Sfx.Play(S.Chip); }, 20) { Visible = false });
-            bRed = Ui.Add(new Button(1205, 442, 170, 52, "ROT", C.Red, () => { if (HumanOk) Guess(true); }, 28) { Visible = false });
-            bBlack = Ui.Add(new Button(1390, 442, 170, 52, "SCHWARZ", new Col(70, 70, 90), () => { if (HumanOk) Guess(false); }, 26) { Visible = false });
-            bLadderRisk = Ui.Add(new Button(1205, 442, 355, 52, "⬆ RISIKO (1:1)", C.Orange, () => { if (HumanOk) LadderRisk(); }, 24) { Visible = false });
-            bHalf = Ui.Add(new Button(1205, 506, 170, 48, "½ TEILEN", C.Cyan, () => { if (HumanOk) Half(); }, 22) { Visible = false });
-            bTake = Ui.Add(new Button(1390, 506, 170, 48, "NEHMEN", C.Green, () => { if (HumanOk) Collect(false); }, 24) { Visible = false });
+            bTabCards = Ui.Add(new Button(1205, 116, 170, 36, "♠ KARTEN", C.Purple, () => { if (!HumanOk) return; if (LocalNet) Net("mode", (int)GambleMode.Cards); SetMode(GambleMode.Cards); gModeHuman = gMode; Sfx.Play(S.Chip); }, 20) { Visible = false });
+            bTabLadder = Ui.Add(new Button(1390, 116, 170, 36, "🪜 LEITER", C.Gold, () => { if (!HumanOk) return; if (LocalNet) Net("mode", (int)GambleMode.Ladder); SetMode(GambleMode.Ladder); gModeHuman = gMode; Sfx.Play(S.Chip); }, 20) { Visible = false });
+            bRed = Ui.Add(new Button(1205, 442, 170, 52, "ROT", C.Red, () => { if (HumanOk) LocalGuess(true); }, 28) { Visible = false });
+            bBlack = Ui.Add(new Button(1390, 442, 170, 52, "SCHWARZ", new Col(70, 70, 90), () => { if (HumanOk) LocalGuess(false); }, 26) { Visible = false });
+            bLadderRisk = Ui.Add(new Button(1205, 442, 355, 52, "⬆ RISIKO (1:1)", C.Orange, () => { if (HumanOk) LocalLadder(); }, 24) { Visible = false });
+            bHalf = Ui.Add(new Button(1205, 506, 170, 48, "½ TEILEN", C.Cyan, () => { if (HumanOk) { if (LocalNet && g.Active && !g.Busy) Net("half"); Half(); } }, 22) { Visible = false });
+            bTake = Ui.Add(new Button(1390, 506, 170, 48, "NEHMEN", C.Green, () => { if (HumanOk) LocalTake(); }, 24) { Visible = false });
             // Gegnerwahl: "Solo" statt "2 Spieler" (AddSwitch reicht humanSub nicht durch -> Klick lokal ersetzt)
+            netDuel = Shared("duel", StartMode);
             var sw = Opponents.AddSwitch(this, OppKey, 30, 596, 255, 62, StartMode, "Solo");
-            sw.Click = () => Opponents.Pick(this, OppKey, o => { Opp = o; StartMode(); }, "Solo", "allein spielen");
+            sw.Click = () => { if (Remote) { App.Toast("Bluetooth-Duell - Trennen im Menü"); return; } Opponents.Pick(this, OppKey, o => { Opp = o; StartMode(); }, "Solo", "allein spielen"); };
             StartMode();
             Opponents.Pick(this, OppKey, o => StartMode(), "Solo", "allein spielen");
         }
@@ -272,10 +294,10 @@ namespace GlamourGames
             spinning = false; fastStopping = false; wins.Clear(); showLine = -2; expReels.Clear(); expT = 99; lastWin = 0; cpuPlan = false;
             for (int r = 0; r < 5; r++) if (moving[r] || drums[r].Settling) { moving[r] = false; pos[r] = re[r]; drums[r].Snap(re[r]); }
             SetGrid();
-            duel = VsCpu; duelLive = duelOver = turnLive = turnReady = false; gMode = gModeHuman;
+            duel = VsCpu || Remote; slotRnd = Remote ? new Random(Link.Seed * 17 + duels++) : Rng.Shared; duelLive = duelOver = turnLive = turnReady = false; gMode = gModeHuman;
             if (!duel) { soloCredits = LoadCents(); msg = Platform.Pick("Viel Glück! Leertaste = SPIN / STOPP", "Viel Glück! SPIN antippen = drehen / stoppen"); return; }
             dCred[0] = dCred[1] = DuelStart; lbP[1] = 3; lnP[1] = 10; turnsDone = 0; turn = 0; lastBetP[0] = lastBetP[1] = 50;
-            msg = $"Duell gegen den Computer ({Opponents.Label(Opp)}) - {DuelRounds} Runden";
+            msg = Remote ? $"Duell gegen {PName(1)} - {DuelRounds} Runden" : $"Duell gegen den Computer ({Opponents.Label(Opp)}) - {DuelRounds} Runden";
             int g0 = gen;
             CoinToss.Start(this, first => { if (g0 != gen) return; firstP = first; turn = first; duelLive = true; StartTurn(); });
         }
@@ -304,7 +326,7 @@ namespace GlamourGames
             Tm.After(a != b ? 3f : 1.2f, () =>
             {
                 if (g0 != gen) return;
-                Result(msg, $"{n0} {Eu(a)}  :  {Eu(b)} {n1}", a > b ? C.Gold : b > a ? C.Red : C.Cyan, lines, ("Neues Duell", C.Green, StartMode), ("Menü", C.Purple, () => App.Go(new Menu())));
+                Result(msg, $"{n0} {Eu(a)}  :  {Eu(b)} {n1}", a > b ? C.Gold : b > a ? C.Red : C.Cyan, lines, ("Neues Duell", C.Green, netDuel), ("Menü", C.Purple, () => App.Go(new Menu())));
             });
         }
         void SetMode(GambleMode m)
@@ -384,7 +406,8 @@ namespace GlamourGames
             if (overlay != null) { CloseOv(); return; }
             if (spinning) { FastStop(); return; }
             if (Co.Busy) return;
-            if (g.Active) { if (g.Busy) return; Collect(true); if (duel) return; }   // im Duell beendet NEHMEN den Zug
+            if (g.Active) { if (g.Busy) return; if (LocalNet) Net("take"); Collect(true); if (duel) return; }   // im Duell beendet NEHMEN den Zug
+            if (LocalNet) Net("spin", LbIdx, NLines);
             Co.Start(SpinCo());
         }
 
@@ -417,7 +440,7 @@ namespace GlamourGames
             Sfx.Play(S.Spin);
 
             // Stopps rein zufaellig und unabhaengig (Casino-RNG)
-            stops = SlotMath.RandomStops(Rng.Shared);
+            stops = SlotMath.RandomStops(slotRnd);
 
             for (int r = 0; r < 5; r++)
             {
@@ -450,7 +473,7 @@ namespace GlamourGames
             }
             if (books >= 3)
             {
-                fsSym = Regular[Rng.I(Regular.Length)]; inFree = true; freeSpins = 10; fsSum = win;
+                fsSym = Regular[slotRnd.Next(Regular.Length)]; inFree = true; freeSpins = 10; fsSum = win;
                 yield return Overlay("10 FREISPIELE!", $"Sondersymbol: {Names[fsSym]}", fsSym, 3.2f); yield return .4f; Co.Start(SpinCo()); yield break;
             }
             if (win > 0) { msg = $"GEWINN: {Eu(win)} - Risiko oder Nehmen"; StartGamble(win); } else msg = "Leider kein Gewinn - nochmal!";
@@ -484,7 +507,7 @@ namespace GlamourGames
         bool CanLadderStep => g.Active && !g.Busy && g.Amount > 0 && ladderStep < 11;
         void Guess(bool red)
         {
-            if (!CanDouble) return; g.Busy = true; var suits = new[] { 1, 2, 0, 3 }; g.Suit = suits[Rng.I(4)]; g.Rank = CardArt.Ranks[Rng.I(13)]; g.Flip.Target = 1; Sfx.Play(S.Flip); int g0 = gen;
+            if (!CanDouble) return; g.Busy = true; var suits = new[] { 1, 2, 0, 3 }; g.Suit = suits[slotRnd.Next(4)]; g.Rank = CardArt.Ranks[slotRnd.Next(13)]; g.Flip.Target = 1; Sfx.Play(S.Flip); int g0 = gen;
             Tm.After(.7f, () =>
             {
                 if (g0 != gen) return;
@@ -506,7 +529,7 @@ namespace GlamourGames
             Tm.After(0.35f, () =>
             {
                 if (g0 != gen || !g.Active) return;
-                bool up = Rng.I(2) == 0;
+                bool up = slotRnd.Next(2) == 0;
                 if (up)
                 {
                     ladderStep = Math.Min(11, ladderStep + 1); g.Amount = LadderVal(ladderStep); lastWin = g.Amount; Sfx.Play(S.Match);
@@ -535,6 +558,9 @@ namespace GlamourGames
             });
         }
 
+        void LocalGuess(bool red) { if (LocalNet && CanDouble) Net("guess", red ? 1 : 0); Guess(red); }
+        void LocalLadder() { if (LocalNet && CanLadderStep) Net("ladder"); LadderRisk(); }
+        void LocalTake() { if (LocalNet && g.Active && !g.Busy) Net("take"); Collect(false); }
         void Half()
         {
             if (!g.Active || g.Busy || g.Amount < 2 || ladderStep <= 1) return;
@@ -558,7 +584,7 @@ namespace GlamourGames
             if (k == Key.Space || k == Key.Enter)
             {
                 if (spinning) FastStop();
-                else if (g.Active) { if (gMode == GambleMode.Ladder) LadderRisk(); else Guess(true); }
+                else if (g.Active) { if (gMode == GambleMode.Ladder) LocalLadder(); else LocalGuess(true); }
                 else Spin();
             }
             else if (k == Key.Up) ChangeBet(1);
