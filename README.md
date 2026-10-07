@@ -14,6 +14,8 @@ Privates Repository.
 * Bildschirmtastatur im Namens-Dialog (Highscore), Haptik (abschaltbar in den Optionen), Ton mit Musik/Effekt-Schalter.
 * Sicherer Bereich: Display-Aussparungen (Cutout) und Navigationsleiste werden ausgespart, der Hintergrund füllt trotzdem den ganzen Bildschirm.
 * Adaptive Render-Auflösung (`AdaptiveQuality`) hält die Bildrate stabil; 60-FPS-Limit, MSAA 4 für die 3D-Rigs.
+* **Bluetooth-Mehrspieler** in allen 10 Spielen: Handy mit Handy oder Handy mit PC ([Windows-Version](https://github.com/domezos2024/glamour_games_unity)). Geräte koppeln, im Menü (Symbol oben links) eröffnen bzw. beitreten; der Eröffner wählt das Spiel.
+* **Realistische Physik:** echte Fallbeschleunigung je Objektgröße, Stöße mit Restitution und Reibung, Kniffel-Würfel stoßen aneinander und lassen sich per Wischgeste werfen, Karten rutschen über den Filz, Chips fallen auf den Stapel, Walzen rasten federnd ein, Schiffe schaukeln und sinken mit Schlagseite, Pokal kippelt aus.
 
 ## Technik
 
@@ -57,5 +59,6 @@ Tools\Android\vd.ps1                   # Testwerkzeug: virtuelles Display (scrcp
 
 ## Getestet
 
+* Bluetooth Pixel 10 ↔ Windows-PC (Realtek-Adapter) in beiden Richtungen: Verbindung, Spielwahl durch den Eröffner, gespiegelter Münzwurf, komplette Zugfolge Vier Gewinnt. Alle 10 Spiele zusätzlich im Zwei-Prozess-Test (Vorschau über TCP) synchron.
 * Pixel 10 (Android 16): Start, Menü, alle 10 Spiele mit Gegnerwahl, Münzwurf, KI-Partie Vier Gewinnt bis zum Sieg, Zurück-Taste, 3D-Rigs (Würfel, Münze, Pokal).
 * Keine Unity-Fehler oder Ausnahmen im Log während der Tour. Auf dem virtuellen Display (zusätzliche Video-Kodierung durch scrcpy) laufen die Spiele bei 44–52 FPS mit adaptiver Auflösung 0,6; auf dem echten Display ist die Last geringer.

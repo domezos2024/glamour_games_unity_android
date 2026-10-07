@@ -3,12 +3,19 @@ $global:Adb = $env:GLAMOUR_ADB
 if (-not $global:Adb) { $global:Adb = (Get-ChildItem 'C:\Program Files\Unity\Hub\Editor' -Directory | Sort-Object Name -Descending | % { Join-Path $_.FullName 'Editor\Data\PlaybackEngines\AndroidPlayer\SDK\platform-tools\adb.exe' } | ? { Test-Path $_ } | Select-Object -First 1) }
 if (-not $global:Adb) { $global:Adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" }
 $global:Pkg = 'de.domezosware.glamourgames.unityandroid'
+# Zielgeraet: Pixel 10 per USB (57241FDCR0042J) oder WLAN-Debugging (mDNS-Name), ueberschreibbar mit GLAMOUR_SERIAL
+$global:Serial = $env:GLAMOUR_SERIAL
+if (-not $global:Serial) {
+    $online = & $global:Adb devices | Select-String '\tdevice$' | % { ($_.Line -split "`t")[0] }
+    $global:Serial = @('57241FDCR0042J', 'adb-57241FDCR0042J-AKTDfX._adb-tls-connect._tcp') | ? { $online -contains $_ } | Select-Object -First 1
+    if (-not $global:Serial) { $global:Serial = 'adb-57241FDCR0042J-AKTDfX._adb-tls-connect._tcp' }
+}
 
-function Adb { & $global:Adb @args }
+function Adb { & $global:Adb -s $global:Serial @args }
 function Start-Glamour([string]$UnityArgs = '') {
     Adb shell input keyevent KEYCODE_WAKEUP | Out-Null; Adb shell am force-stop $global:Pkg | Out-Null; Adb logcat -c | Out-Null
     $act = (Adb shell cmd package resolve-activity --brief -c android.intent.category.LAUNCHER $global:Pkg | Select-Object -Last 1).Trim()
-    if ($UnityArgs) { Adb shell am start -n $act --es unity "$UnityArgs" | Out-Null } else { Adb shell am start -n $act | Out-Null }
+    if ($UnityArgs) { Adb shell am start -n $act --es unity "'$UnityArgs'" | Out-Null } else { Adb shell am start -n $act | Out-Null }
 }
 # Bildschirmfoto vom Geraet (binaer-sicher ueber cmd)
 function Get-Shot([string]$Path) { cmd /c "`"$global:Adb`" exec-out screencap -p > `"$Path`"" }

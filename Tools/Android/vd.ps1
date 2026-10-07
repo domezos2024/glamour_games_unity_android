@@ -24,7 +24,7 @@ function Vd-Key([string]$k) { Adb shell "input -d $($global:Vd.Id) keyevent $k" 
 function Vd-Launch([string]$UnityArgs = '') {
     Adb shell am force-stop $global:Pkg | Out-Null; Adb logcat -c | Out-Null
     $act = (Adb shell cmd package resolve-activity --brief -c android.intent.category.LAUNCHER $global:Pkg | Select-Object -Last 1).Trim()
-    if ($UnityArgs) { Adb shell am start --display $global:Vd.Id -n $act --es unity "$UnityArgs" | Out-Null } else { Adb shell am start --display $global:Vd.Id -n $act | Out-Null }
+    if ($UnityArgs) { Adb shell am start --display $global:Vd.Id -n $act --es unity "'$UnityArgs'" | Out-Null } else { Adb shell am start --display $global:Vd.Id -n $act | Out-Null }
 }
 function Vd-Perf([int]$n = 3) { Adb logcat -d | Select-String 'App.Perf' | Select-Object -Last $n | % { ($_.Line -split 'App.Perf: ')[1] } }
 function Vd-Log([string]$pattern, [int]$n = 10) { Adb logcat -d | Select-String $pattern | Select-Object -Last $n | % { ($_.Line -split ' I Unity   : ')[-1] -replace '^\[Glamour\] .*\\Scripts\\', '' } }
