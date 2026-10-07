@@ -6,7 +6,8 @@
 ## Pflicht nach jeder Code-Aenderung
 - APK auf dem PC bauen (Unity batchmode, siehe README "Bauen") und **immer** auf dem Geraet
   `adb-57241FDCR0042J-AKTDfX._adb-tls-connect._tcp` installieren und testen (`Tools\Android\install_run.ps1`, `Tools\Android\vd.ps1`).
-- `Tools\Android\adb.ps1` adressiert dieses Geraet per `-s` (ueberschreibbar mit `GLAMOUR_SERIAL`).
+- `Tools\Android\adb.ps1` waehlt das Pixel 10 automatisch: USB `57241FDCR0042J` oder WLAN `adb-57241FDCR0042J-AKTDfX._adb-tls-connect._tcp` (ueberschreibbar mit `GLAMOUR_SERIAL`). WLAN-Debugging faellt gelegentlich weg (mDNS findet nichts) -> USB nutzen.
+- Die installierte App ist mit dem Release-Schluessel signiert; Debug-Builds scheitern mit `INSTALL_FAILED_UPDATE_INCOMPATIBLE`. Vor dem Build die Variablen aus `E:\Claude Projekte\android_signing\keystore.properties` setzen (Inhalt nie ausgeben, nie ins Repo).
 
 ## Ohne Unity pruefen (Cloud/Linux)
 - `bash Tools/Preview/preview.sh --scene=<0..9|menu> --t=<s> --script="c,x,y@t" --out=bild.png` kompiliert alles ausser `App.cs`, `Sfx.cs`, `URP/` und rendert eine Szene.
