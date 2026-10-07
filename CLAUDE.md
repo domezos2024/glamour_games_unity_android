@@ -15,3 +15,10 @@
 
 ## Physik
 - Gemeinsamer Kern: `Assets/Glamour/Scripts/Core/Physics.cs` (`Phys`, `Body`, `Rocker`, `Sinker`, `Chain`, `Glide`). Massstab je Szene in Pixel/Meter, `Phys.Gpx(pxPerM)` = echte Erdbeschleunigung.
+
+## Bluetooth
+- Transport: `Core/Net/Link.cs` (Protokoll), `AndroidBt.cs` + `Assets/Plugins/Android/GlamourBt.java`, `WinBt.cs` (Winsock RFCOMM). Gleiche UUID auf beiden Seiten.
+- Windows als Host: SDP-Dienst als fertigen Datensatz (`BTH_SET_SERVICE`) anmelden; die Anmeldung nur mit Dienstklasse liefert WSAEINVAL (10022).
+- Echter Test PC <-> Pixel: PC `MB-CUBE` (90:7A:DA:0D:6A:C0) ist gekoppelt; Windows-App per `--click=`/`--press=` steuern, Handy per `adb shell input tap` (Massstab 1,2, Versatz x 338,5). Player.log vor dem Start loeschen, sonst liest man alte Eintraege.
+- Hintergrund-Jobs (httpListener `job_start`) laufen mit eigenem adb-Server: Tap-Design/Get-View dort nicht nutzbar.
+- Beide Repos gleich halten: Skripte nach `glamour_games_unity` (Windows) kopieren.
