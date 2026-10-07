@@ -10,7 +10,15 @@ namespace GlamourGames
         public override Col Acc1 => C.Purple; public override Col Acc2 => C.Pink;
         public override string OppKey => "memory";
         static readonly string[] Sym = { "diamond", "car", "heart", "crown", "star", "clover", "butterfly", "paw", "rose", "wolf", "moon", "gamepad", "sun", "palms", "infinity", "notes", "coffee", "wings", "unicorn", "dragonfly" };
-        class Card { public int Sym; public Spring Flip = new Spring(0) { K = 190, D = 20 }; public bool Matched; public float MatchT, Hov, CpuT = -1; public Spring Lift = new Spring(0); }
+        class Card { public int Sym; public Spring Flip = new Spring(0) { K = 190, D = 20 }; public bool Matched; public float MatchT, Hov, CpuT = -1; public Spring Lift = new Spring(0); public float FlyT, X0, Y0, Vx, Vy, W; public int To; public bool Fly; }
+        // gefundene Paare werden zum Punktestand geworfen: Wurfparabel unter Schwerkraft mit konstanter Drehung (Massstab 400 px/m)
+        static readonly float Gm = Phys.Gpx(400), FlyDur = MathF.Sqrt(8 * 110 / Phys.Gpx(400));
+        static Pt BoxPos(int p) => new Pt(170, p == 0 ? 245 : 485);
+        void Toss(int i, int p, float delay)
+        {
+            var cd = cards[i]; var r = Rc(i); var to = BoxPos(p); var (vx, vy) = Phys.Launch(r.MidX, r.MidY, to.X, to.Y, FlyDur, Gm);
+            cd.X0 = r.MidX; cd.Y0 = r.MidY; cd.Vx = vx; cd.Vy = vy; cd.W = (to.X < r.MidX ? -1 : 1) * Rng.F(6, 10); cd.FlyT = -delay; cd.To = p; cd.Fly = true;
+        }
         Card[] cards; readonly List<int> up = new List<int>(); bool locked; int cur, first; int[] score = new int[2]; int matched;
         bool toss = true; Button bNew;
         int over = -1;
@@ -70,7 +78,7 @@ namespace GlamourGames
                     cards[a].Matched = cards[b].Matched = true; score[cur] += 8; matched += 2; up.Clear(); locked = false; Sfx.Play(S.Match);
                     brain?.Remove(a); brain?.Remove(b);
                     foreach (var i in new[] { a, b }) { var r = Rc(i); Fx.Burst(r.MidX, r.MidY, 34, null, 380); Fx.Ring(r.MidX, r.MidY, C.Gold, 18, 240); Fx.Shockwave(r.MidX, r.MidY, C.Gold, 90, .4f); }
-                    var r0 = Rc(a); Pop("+8", r0.MidX, r0.Top, C.Gold, 46); App.Flash(C.Gold, .18f);
+                    var r0 = Rc(a); Pop("+8", r0.MidX, r0.Top, C.Gold, 46); App.Flash(C.Gold, .18f); Toss(a, cur, .45f); Toss(b, cur, .6f);
                     if (matched == 40) Tm.After(.7f, End); else CpuMaybe();
                 });
             else
@@ -115,6 +123,12 @@ namespace GlamourGames
         public override void Update(float dt)
         {
             if (toss || cards == null) return;
+            foreach (var c in cards)
+            {
+                if (!c.Fly || c.FlyT >= FlyDur) continue; float n = c.FlyT + dt;
+                if (n >= FlyDur) { var bp = BoxPos(c.To); Fx.Burst(bp.X, bp.Y, 16, new[] { C.Gold, Col.White }, 220); Sfx.Play(S.Chip, .5f, 1.3f); }
+                c.FlyT = n;
+            }
             foreach (var c in cards) { c.Flip.Update(dt); c.Lift.Update(dt); if (c.Matched) c.MatchT += dt; if (c.CpuT >= 0) { c.CpuT += dt; if (c.CpuT > 1.2f) c.CpuT = -1; } }
             for (int i = 0; i < 40; i++) cards[i].Hov = Ease.Lerp(cards[i].Hov, i == over && !cards[i].Matched ? 1 : 0, Math.Min(1, dt * 14));
         }
@@ -126,13 +140,25 @@ namespace GlamourGames
             W.PlayerBox(c, Gfx.R(40, 380, 260, 210), PName(1), score[1].ToString(), C.Pink, cur == 1, Time, "Punkte");
             Gfx.Text(c, $"Paare übrig: {20 - matched / 2}", 170, 640, 26, C.Dim, Al.C, false);
             Gfx.Text(c, $"{PName(cur)} ist dran", 170, 690, 26, cur == 0 ? C.Cyan : C.Pink, Al.C, true, 6);
-            for (int i = 0; i < 40; i++) DrawCard(c, i);
+            for (int i = 0; i < 40; i++) if (!cards[i].Fly || cards[i].FlyT < 0) DrawCard(c, i);
+            for (int i = 0; i < 40; i++) if (cards[i].Fly && cards[i].FlyT >= 0) DrawCard(c, i);
         }
         void DrawCard(Canvas2D c, int i)
         {
             var cd = cards[i]; var r = Rc(i); float f = cd.Flip.V, sx = MathF.Abs(MathF.Cos(f * MathF.PI)), lift = cd.Hov * 8 + (f > .05f && f < .95f ? MathF.Sin(f * MathF.PI) * 16 : 0);
             float sc = 1 + cd.Hov * .04f + (cd.Matched ? .03f * MathF.Sin(cd.MatchT * 4) : 0);
             if (cd.Lift.V < -300) return;
+            if (cd.Fly && cd.FlyT >= FlyDur) return;
+            if (cd.Fly && cd.FlyT >= 0)
+            {
+                // im Flug: Lage geschlossen aus Wurfparabel, Karte wird zum Ziel hin kleiner (entfernt sich vom Betrachter)
+                float t = cd.FlyT, u = t / FlyDur, x = cd.X0 + cd.Vx * t, y = cd.Y0 + cd.Vy * t + .5f * Gm * t * t;
+                c.Save(); c.Translate(x, y); c.RotateRadians(cd.W * t); c.Scale(1 - .55f * u, 1 - .55f * u);
+                var fr = Gfx.Ctr(0, 0, CW, CH); var fh = Col.FromHsv(cd.Sym * 18, 70, 100);
+                Gfx.Shadow(c, fr, 14, 14, .35f, 3, 16); Gfx.Glow(c, fr, 14, C.Gold, 12, .8f); Gfx.RectGrad(c, fr, 14, fh.Dark(.55f), fh.Dark(.16f));
+                Gfx.Image(c, Assets.Img(Sym[cd.Sym]), Gfx.Ctr(0, 0, CW * .8f, CW * .8f)); var fs = Gfx.Line(C.Gold, 4); fs.Glow = 1.9f; c.DrawRoundRect(fr, 14, 14, fs);
+                c.Restore(); return;
+            }
             // beim Austeilen fliegen die Karten leicht gedreht ein
             float rot = cd.Lift.V * .06f + (f > .05f && f < .95f ? MathF.Sin(f * MathF.PI) * 4 : 0);
             c.Save(); c.Translate(r.MidX, r.MidY - lift + cd.Lift.V); c.RotateDegrees(rot); c.Scale(Math.Max(sx, .02f) * sc, sc);

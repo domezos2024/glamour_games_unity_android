@@ -12,7 +12,10 @@ namespace GlamourGames
         public override Col Acc1 => C.Blue; public override Col Acc2 => C.Magenta;
         public override string OppKey => "c4";
         const int Rows = 6, Cols = 7; const float CS = 104, BX = 800 - CS * 3.5f, BY = 168;
-        class Disc { public int Col, Row, P; public float Y, Vy; public bool Settled, Landed_; public float Pulse; }
+        // Massstab: Feld 104 px = 3,7 cm (echtes Brett) -> echte Fallbeschleunigung; Kunststoff auf Kunststoff federt wenig
+        const float PxPerM = 2800, Gc = Phys.G * PxPerM, Restit = .3f;
+        class Disc { public int Col, Row, P; public float Y, Vy; public bool Settled, Landed_; public float Pulse, HitT = -9, HitV, PushT = -9, PushV, Side; }
+        readonly List<Body> outgoing = new List<Body>();
         int[] b = new int[42]; readonly List<Disc> discs = new List<Disc>(); int cur = 1, over; int[] score = new int[2]; List<int> winCells; float winT; bool busy; int hoverCol = -1; string status = "";
         static float CX(int c) => BX + c * CS + CS / 2; static float CY(int r) => BY + r * CS + CS / 2;
         // Computer-Gegner: Suche laeuft im Hintergrund (Task), Ergebnis wird in Update abgeholt
@@ -25,11 +28,18 @@ namespace GlamourGames
             Opponents.Pick(this, OppKey, o => NewMatch());
         }
         int starter = 1;
+        /// <summary>Bodenklappe oeffnen: alle Steine fallen gleichzeitig frei aus dem Brett (leicht seitlich verkantet).</summary>
+        void ReleaseDiscs()
+        {
+            if (discs.Count == 0) return;
+            foreach (var d in discs) outgoing.Add(new Body { X = CX(d.Col), Y = d.Y, R = CS * .4f, Vx = (Rng.F() - .5f) * 60, Gravity = Gc, Tag = d.P });
+            Sfx.Play(S.Drop, .6f, .7f); Sfx.Play(S.Creak, .4f, 1.4f); Log.I($"bodenklappe: {discs.Count} Steine");
+        }
         void NextRound() { starter = 3 - starter; Reset(); }
         void NewMatch() { score = new int[2]; starter = 1; tossing = true; Reset(); CoinToss.Start(this, f => { tossing = false; starter = f + 1; Reset(); }); }
         void Reset()
         {
-            gen++; CancelCpuThink(); b = new int[42]; discs.Clear(); cur = starter; over = 0; winCells = null; busy = false; winT = 0; status = $"{PName(cur - 1)} ist dran"; Modal = null; parade = null; resShown = false;
+            gen++; CancelCpuThink(); b = new int[42]; ReleaseDiscs(); discs.Clear(); cur = starter; over = 0; winCells = null; busy = false; winT = 0; status = $"{PName(cur - 1)} ist dran"; Modal = null; parade = null; resShown = false;
             aiTask = null; cpuDue = false; cpuCol = -1; hoverCol = -1; CpuCheck();
         }
         bool CpuTurn => VsCpu && cur == 2 && over == 0 && !tossing;
@@ -121,9 +131,20 @@ namespace GlamourGames
             {
                 var d = discs[i];
                 if (d.Settled) { d.Pulse += dt; continue; }
-                d.Vy += 3200 * dt; d.Y += d.Vy * dt; float ty = CY(d.Row);
-                if (d.Y >= ty) { d.Y = ty; if (d.Vy > 260) { d.Vy = -d.Vy * .32f; if (!d.Landed_) { d.Landed_ = true; Landed(d); } } else { d.Vy = 0; d.Settled = true; } }
+                int n = Phys.Sub(dt, out float h); float ty = CY(d.Row);
+                for (int k = 0; k < n && !d.Settled; k++)
+                {
+                    d.Vy += Gc * h; d.Y += d.Vy * h;
+                    if (d.Y < ty) continue;
+                    // Aufprall auf Stein/Boden darunter: Restitution, seitliches Klappern im Schacht, Stoss geht in die Steine darunter
+                    d.Y = ty; float v = d.Vy; d.HitT = Time; d.HitV = v; d.Side = Rng.F() < .5f ? -1 : 1;
+                    foreach (var o in discs) if (o != d && o.Col == d.Col && o.Row > d.Row) { o.PushT = Time; o.PushV = v * .35f / (o.Row - d.Row); }
+                    if (d.Landed_) Sfx.Play(S.Drop, Math.Min(.5f, v / 6000), 1.25f);
+                    if (v > 500) { d.Vy = -v * Restit; if (!d.Landed_) { d.Landed_ = true; Landed(d); } }
+                    else { d.Vy = 0; d.Settled = true; if (!d.Landed_) { d.Landed_ = true; Landed(d); } }
+                }
             }
+            for (int i = outgoing.Count - 1; i >= 0; i--) { outgoing[i].Update(dt); if (outgoing[i].Y > App.VY1 + CS) outgoing.RemoveAt(i); }
             if (winCells != null) winT += dt;
             CpuUpdate(dt);
         }
@@ -144,7 +165,8 @@ namespace GlamourGames
                 Gfx.Disc(c, CX(hoverCol), BY - CS * .55f + MathF.Sin(Time * 6) * 4, CS * .4f, col);
             }
             if (cpuCol >= 0 && CpuTurn && !busy) DrawCpuHover(c);
-            foreach (var d in discs) DrawDisc(c, d);
+            foreach (var o in outgoing) DrawDisc(c, o.X, o.Y, (int)o.Tag);
+            foreach (var d in discs) DrawDisc(c, d, Time);
             Gfx.Glow(c, frame, 26, C.Blue, 22, .5f);
             var p = Gfx.Fill(Col.White); p.Shader = Grad.Linear(frame.Left, frame.Top, frame.Right, frame.Bottom, new Col(50, 90, 255), new Col(10, 20, 100));
             c.DrawPerforated(frame, 26, BX, BY, CS, CS, Cols, Rows, CS * .4f, p);
@@ -176,12 +198,18 @@ namespace GlamourGames
             var ring = Gfx.Line(C.Pink.Light(.5f).A(.8f), 2); ring.Glow = 1.8f; c.DrawCircle(x, y, CS * .4f, ring);
             c.Restore();
         }
-        static void DrawDisc(Canvas2D c, Disc d)
+        static void DrawDisc(Canvas2D c, Disc d, float now)
         {
-            var col = d.P == 1 ? C.Cyan : C.Pink; float r = CS * .4f, x = CX(d.Col);
-            Gfx.Light(c, x, d.Y, r * 1.8f, col, .3f, 1.4f);
-            Gfx.Disc(c, x, d.Y, r, col);
-            c.DrawCircle(x, d.Y, r, Gfx.Line(col.Dark(.35f).A(.7f), 1.5f));
+            // Spiel im Schacht: Stein schwingt nach dem Aufprall seitlich aus (Spaltbreite begrenzt), Stoss von oben drueckt ihn kurz nach unten
+            float gap = CS * .5f - CS * .4f - 2, dx = Math.Clamp(Phys.Ring(d.HitV * .05f * d.Side, now - d.HitT, 7, .18f), -gap, gap), dy = Math.Max(0, Phys.Ring(d.PushV * .12f, now - d.PushT, 22, .3f));
+            DrawDisc(c, CX(d.Col) + dx, d.Y + dy, d.P);
+        }
+        static void DrawDisc(Canvas2D c, float x, float y, int p)
+        {
+            var col = p == 1 ? C.Cyan : C.Pink; float r = CS * .4f;
+            Gfx.Light(c, x, y, r * 1.8f, col, .3f, 1.4f);
+            Gfx.Disc(c, x, y, r, col);
+            c.DrawCircle(x, y, r, Gfx.Line(col.Dark(.35f).A(.7f), 1.5f));
         }
     }
 

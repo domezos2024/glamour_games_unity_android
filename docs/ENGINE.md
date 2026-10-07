@@ -78,6 +78,7 @@ Registrierung: `Games/Menu.cs` → `Registry.All`.
 | Speicher | `Save.Int/Str/Set/Scores/IsHigh/AddScore`, `Pl.Name(i)` |
 | Gegner | `Opponent` (`Human/Easy/Medium/Hard`), `Opponents.Pick/AddSwitch/ThinkTime/Accuracy/Label`, `Scene.Opp/VsCpu/PName/CpuThink/CpuThinking/ThinkPos` |
 | Feiern | `DiceParade` (`PKind.Dice/Disc/Sailor`), `CoinToss.Start(scene, first => ...)` |
+| Physik | `Phys` (`Gpx(pxPerM)` echte Erdbeschleunigung, `Launch`, `SlideSpeed`, `Drop`, `Ring`), `Body` (Starrkörper Kreis/Rechteck mit Boden/Wänden, Restitution, Reibung), `Rocker` (Kippen auf Kanten), `Sinker` (Flutung/Auftrieb/Krängung), `Chain` (Gliederkette), `Drum` (Walze mit Motor/Bremse/Rastfeder), `Glide` (Wurf + Gleitreibung), `ChipStack` (fallende Chips) |
 
 ### Unterschiede zum Skia-Original (Portierungshilfe)
 

@@ -357,7 +357,11 @@ namespace GlamourGames
         public override string OppKey => "poker";
         static readonly (int sb, int bb)[] Blinds = { (10, 20), (20, 40), (30, 60), (50, 100), (75, 150), (100, 200), (150, 300), (200, 400), (300, 600), (500, 1000) };
         const int PerLevel = 8, Start = 1000;
-        class P { public string Name; public bool Human; public int Chips, Bet, Total, Raises; public List<PokerCard> Hole = new List<PokerCard>(); public bool Folded, AllIn, Out, Acted, CanRaise; public string LastAct = "", HandName = ""; public Spring[] Flip = { new Spring(0) { K = 170, D = 20 }, new Spring(0) { K = 170, D = 20 } }; }
+        class P { public string Name; public bool Human; public int Chips, Bet, Total, Raises; public List<PokerCard> Hole = new List<PokerCard>(); public bool Folded, AllIn, Out, Acted, CanRaise; public string LastAct = "", HandName = ""; public Spring[] Flip = { new Spring(0) { K = 170, D = 20 }, new Spring(0) { K = 170, D = 20 } }; public Glide[] G = new Glide[2]; }
+        // Karten werden vom Geber ueber den Filz geworfen (Flugphase + Gleitreibung), Chips fallen auf ihre Stapel
+        static readonly float Gk = Phys.Gpx(1750); readonly Glide[] bg = new Glide[5]; readonly ChipStack potStack = new ChipStack(); readonly ChipStack[] betStacks = { new ChipStack(), new ChipStack(), new ChipStack() };
+        static readonly Pt DealFrom = new Pt(700, 250);
+        Pt HolePos(int i, int k) => new Pt(Seat[i].X + (k - .5f) * 92, Seat[i].Y + (i == 2 ? 10 : 24));
         P[] pl; List<PokerCard> deck = new List<PokerCard>(), board = new List<PokerCard>(); int button, handNo, curBet, lastRaise, toAct = -1, sbI, bbI, sb = 10, bb = 20; string street = ""; bool inHand, gameOver, showAll; int revealed = -1; List<int> winners = new List<int>(); float handT;
         (string act, int to)? pending; (string t, string s)? overlay; bool overlayDone; readonly List<string> log = new List<string>(); string msg = ""; Button bNext, bNew, bFold, bCall, bRaise, bMin, bHalf, bPot, bAll, bShow;
         readonly Spring[] bflip = Enumerable.Range(0, 5).Select(_ => new Spring(0) { K = 170, D = 20 }).ToArray(); readonly float[] bt = new float[5];
@@ -444,9 +448,9 @@ namespace GlamourGames
         {
             if (inHand) yield break; foreach (var p in pl) if (p.Chips <= 0) p.Out = true; var alive = pl.Where(p => p.Chips > 0).ToList(); if (alive.Count < 2 || (!hotseat && pl[0].Out)) { GameOver(); yield break; }
             handNo++; int lvl = Math.Min(Blinds.Length - 1, (handNo - 1) / PerLevel); (sb, bb) = Blinds[lvl]; if ((handNo - 1) % PerLevel == 0 && handNo > 1) Lg($"Blinds steigen auf {sb}/{bb}.");
-            foreach (var p in pl) { p.Hole.Clear(); p.Bet = p.Total = p.Raises = 0; p.Folded = p.Out; p.AllIn = p.Acted = false; p.CanRaise = true; p.LastAct = p.HandName = ""; p.Flip[0].Snap(0); p.Flip[1].Snap(0); }
+            foreach (var p in pl) { p.Hole.Clear(); p.Bet = p.Total = p.Raises = 0; p.Folded = p.Out; p.AllIn = p.Acted = false; p.CanRaise = true; p.LastAct = p.HandName = ""; p.Flip[0].Snap(0); p.Flip[1].Snap(0); p.G = new Glide[2]; }
             button = Next(button, p => !p.Out); bool heads = alive.Count == 2; sbI = heads ? button : Next(button, p => !p.Out); bbI = Next(sbI, p => !p.Out);
-            deck = NewDeck(); board.Clear(); for (int k = 0; k < 5; k++) { bflip[k].Snap(0); bt[k] = 0; } winners.Clear(); hlCards.Clear(); revealed = hotseat ? -1 : 0; showAll = false; inHand = true; street = "preflop"; handT = 0;
+            deck = NewDeck(); board.Clear(); for (int k = 0; k < 5; k++) { bflip[k].Snap(0); bt[k] = 0; bg[k] = null; } winners.Clear(); hlCards.Clear(); revealed = hotseat ? -1 : 0; showAll = false; inHand = true; street = "preflop"; handT = 0;
             Post(sbI, sb, "SB"); Post(bbI, bb, "BB"); curBet = bb; lastRaise = bb; for (int k = 0; k < 2; k++) foreach (var p in pl) if (!p.Out) p.Hole.Add(Draw());
             Lg($"- Hand {handNo} - Blinds {sb}/{bb} - Dealer: {pl[button].Name}"); Sfx.Play(S.Deal); Sfx.Play(S.Chip); toAct = Next(bbI, p => !p.Out && !p.Folded && !p.AllIn); msg = $"Hand {handNo} - Blinds {sb}/{bb}"; yield return .9f;
             bool skip = false;
@@ -576,7 +580,18 @@ namespace GlamourGames
                 bRaise.Visible = bMin.Visible = bHalf.Visible = bPot.Visible = bAll.Visible = ok; bRaise.Text = curBet == 0 ? $"BET {sliderVal}" : $"RAISE AUF {sliderVal}";
             }
             for (int i = 0; i < 3; i++) for (int k = 0; k < 2; k++) { bool show = pl[i].Hole.Count > k && ((showAll && !pl[i].Folded) || (pl[i].Human && revealed == i)); pl[i].Flip[k].Target = show ? 1 : 0; pl[i].Flip[k].Update(dt); }
-            for (int k = 0; k < 5; k++) { bflip[k].Target = k < board.Count ? 1 : 0; bflip[k].Update(dt); if (k < board.Count) bt[k] = Math.Min(1, bt[k] + dt * 3.5f); }
+            for (int k = 0; k < 5; k++)
+            {
+                bflip[k].Target = k < board.Count ? 1 : 0; bflip[k].Update(dt); if (k < board.Count) bt[k] = Math.Min(1, bt[k] + dt * 3.5f);
+                if (k < board.Count) { bg[k] ??= new Glide(DealFrom.X, DealFrom.Y, 700 + (k - 2) * 108, 400, -25 + k * 9, Gk, .3f, .12f); bg[k].Update(dt); } else bg[k] = null;
+            }
+            for (int i = 0; i < pl.Length; i++)
+                for (int k = 0; k < 2; k++)
+                {
+                    var q = pl[i]; if (q.Hole.Count <= k) { q.G[k] = null; continue; }
+                    if (q.G[k] == null && handT >= k * .15f + i * .08f) { var hp = HolePos(i, k); q.G[k] = new Glide(DealFrom.X, DealFrom.Y, hp.X, hp.Y, (hp.X < DealFrom.X ? 30 : -30), Gk, .3f, .14f); }
+                    q.G[k]?.Update(dt);
+                }
         }
 
         // ---- Zeichnen ----
@@ -597,13 +612,13 @@ namespace GlamourGames
             Gfx.Text(c, "GLAMOUR HOLD'EM", 700, 610, 30, C.Magenta.A(.09f), Al.C, true, 0, true);
             Gfx.Text(c, msg, 700, 100, 22, C.Yellow.Light(.3f), Al.C, true, 6);
             int pot = Pot;
-            if (pot > 0) { Gfx.Light(c, 700, PotY, 150, C.Gold, .16f + .05f * MathF.Sin(Time * 3), 1.5f); float tw = Gfx.TW($"POT  {pot}", 34); Chip3D.Stack(c, 700 - tw / 2 - 34, PotY + 12, 22, Math.Min(8, 1 + pot / 150), C.Gold, C.Magenta); }
+            if (pot > 0) { Gfx.Light(c, 700, PotY, 150, C.Gold, .16f + .05f * MathF.Sin(Time * 3), 1.5f); float tw = Gfx.TW($"POT  {pot}", 34); potStack.Draw(c, Time, 700 - tw / 2 - 34, PotY + 12, 22, Math.Min(8, 1 + pot / 150), C.Gold, C.Magenta); } else potStack.Draw(c, Time, 0, 0, 22, 0, C.Gold, C.Magenta);
             Gfx.Text(c, $"POT  {pot}", 700, PotY, 34, C.Gold, Al.C, true, 10); Gfx.Text(c, $"Hand {handNo}  -  Blinds {sb}/{bb}", 700, PotY + 36, 18, C.Dim, Al.C, false);
             for (int k = 0; k < 5; k++)
             {
                 float x = 700 + (k - 2) * 108, y = 400; if (k >= board.Count) { Gfx.Stroke(c, Gfx.Ctr(x, y, 92, 129), 10, Col.White.A(.15f), 2); continue; }
                 bool hl = winners.Count > 0 && Hl(board[k]); if (hl) Gfx.Light(c, x, y, 110, C.Gold, .35f + .1f * MathF.Sin(Time * 6), 1.8f);
-                float e = Ease.OutBack(bt[k]); c.Save(); c.Translate(x, y); c.Scale(e, e); CardArt.Card(c, 0, 0, 92, RS(board[k].R), board[k].S, bflip[k].V, 0, hl ? 6 : 0, hl); c.Restore();
+                var gk = bg[k]; if (gk == null) continue; CardArt.Card(c, gk.X, gk.Y, 92, RS(board[k].R), board[k].S, bflip[k].V, gk.Rot, (hl ? 6 : 0) + gk.Lift, hl);
             }
             for (int i = 0; i < 3; i++) DrawSeat(c, i);
             DrawLog(c);
@@ -633,7 +648,7 @@ namespace GlamourGames
             {
                 float x = s.X + (k - .5f) * 92, y = box.Top + 100; if (p.Hole.Count <= k) { Gfx.Stroke(c, Gfx.Ctr(x, y, 84, 118), 8, Col.White.A(.12f), 2); continue; }
                 bool hl = win && showAll && Hl(p.Hole[k]);
-                float a = Ease.OutBack((handT - k * .15f - i * .08f) / .4f); c.Save(); c.Translate(x, y); c.Scale(a, a); CardArt.Card(c, 0, 0, 84, RS(p.Hole[k].R), p.Hole[k].S, p.Flip[k].V, k == 0 ? -5 : 5, hl ? 5 : 0, hl); c.Restore();
+                var gh = p.G[k]; if (gh == null) continue; CardArt.Card(c, gh.X, gh.Y, 84, RS(p.Hole[k].R), p.Hole[k].S, p.Flip[k].V, (k == 0 ? -5 : 5) + gh.Rot, (hl ? 5 : 0) + gh.Lift, hl);
             }
             Gfx.Text(c, p.Out ? "ausgeschieden" : $"{p.Chips} Chips", s.X, box.Bottom - 26, 22, C.Gold, Al.C, true, 4);
             string st = p.HandName.Length > 0 && showAll ? p.HandName : p.AllIn ? "ALL-IN" : p.LastAct; if (st.Length > 0) Gfx.Text(c, st, s.X, box.Bottom + 20, 20, p.Folded ? C.Dim : p.AllIn ? C.Orange.Light(.3f) : C.Yellow.Light(.3f), Al.C, false);
@@ -643,10 +658,11 @@ namespace GlamourGames
                 var d = new Pt(box.Left + 20, box.Top - 8); var sh = Gfx.Fill(Col.Black.A(.5f)); sh.Blur = 5; c.DrawCircle(d.X + 2, d.Y + 5, 18, sh);
                 c.DrawCircle(d.X, d.Y, 18, Gfx.Fill(Col.White)); var ring = Gfx.Line(C.Gold, 3); ring.Glow = 1.6f; c.DrawCircle(d.X, d.Y, 18, ring); Gfx.Text(c, "D", d.X, d.Y, 22, Col.Black, Al.C);
             }
+            if (p.Bet <= 0) betStacks[i].Draw(c, Time, 0, 0, 22, 0, col, col);
             if (p.Bet > 0)
             {
                 float bx = 700 + (s.X - 700) * .55f, by = i == 2 ? 330 : 500 - 10; if (i == 2) { bx = 700; by = 330; }
-                if (i == 2) by = 335; Chip3D.Stack(c, bx + (i == 2 ? 190 : 0), by + (i == 2 ? -50 : 0), 22, Math.Min(6, 1 + p.Bet / 100), col, col);
+                if (i == 2) by = 335; betStacks[i].Draw(c, Time, bx + (i == 2 ? 190 : 0), by + (i == 2 ? -50 : 0), 22, Math.Min(6, 1 + p.Bet / 100), col, col);
                 Gfx.Text(c, p.Bet.ToString(), bx + (i == 2 ? 190 : 0), by + 22 + (i == 2 ? -50 : 0), 20, Col.White, Al.C, true, 4);
             }
         }

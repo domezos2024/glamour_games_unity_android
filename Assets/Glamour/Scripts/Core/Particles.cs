@@ -153,7 +153,20 @@ namespace GlamourGames
                 var p = l[i]; p.life += dt;
                 if (p.life < 0) { l[i] = p; continue; }
                 if (p.life >= p.max) { bool boom = p.kind == K_STREAK && p.aux == 1, crack = p.kind == K_STREAK && p.aux == 2; l.RemoveAt(i); if (boom) Firework(p.x, p.y, p.col); else if (crack) for (int k = 0; k < 3; k++) l.Add(new P { x = p.x + Rf(-14, 14), y = p.y + Rf(-14, 14), life = -Rf(0, .15f), max = Rf(.12f, .3f), size = Rf(6, 12), rot = Rf(0, .8f), col = Col.White, kind = K_GLINT }); continue; }
-                p.vx -= p.vx * p.drag * dt; p.vy -= p.vy * p.drag * dt; p.vy += p.grav * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.rot += p.vr * dt;
+                if (p.kind == K_CONF || p.kind == K_PETAL)
+                {
+                    // flatterndes Papier: flach liegend bremst die Luft stark, hochkant kaum; die Schraeglage lenkt seitlich ab
+                    float face = MathF.Abs(MathF.Cos(p.rot * 1.7f)), dr = p.drag * (.35f + 1.3f * face);
+                    p.vx -= p.vx * dr * dt; p.vy -= p.vy * dr * dt; p.vy += p.grav * dt; p.vx += MathF.Sin(p.rot * 3.4f) * Math.Max(0, p.vy) * 1.6f * dt;
+                }
+                else { p.vx -= p.vx * p.drag * dt; p.vy -= p.vy * p.drag * dt; p.vy += p.grav * dt; }
+                p.x += p.vx * dt; p.y += p.vy * dt; p.rot += p.vr * dt;
+                if (p.kind == K_COIN && p.vy > 0 && p.y > App.VY1 - p.size * .5f)
+                {
+                    // Muenze prallt vom unteren Rand ab: Restitution, Reibung bremst Gleiten und Drehung
+                    p.y = App.VY1 - p.size * .5f; if (p.vy > 220 && R.NextDouble() < .25) Sfx.Play(S.Coin, Math.Min(.25f, p.vy / 6000), Rf(1.1f, 1.5f));
+                    p.vy = p.vy > 90 ? -p.vy * .42f : 0; p.vx *= .72f; p.vr *= .6f;
+                }
                 if (p.kind == K_BUB) p.x += MathF.Sin(p.life * 7 + p.aux) * 22 * dt;
                 if (p.kind == K_STREAK && p.aux == 3 && R.NextDouble() < dt * 30) l.Add(new P { x = p.x, y = p.y, vx = Rf(-8, 8), vy = Rf(10, 40), max = Rf(.6f, 1.1f), size = 2.2f, drag = 1.5f, grav = 60, col = new Col(255, 170, 70), kind = K_SPARK });
                 if (p.kind == K_STREAK && p.aux == 1 && R.NextDouble() < dt * 90) l.Add(new P { x = p.x, y = p.y, vx = Rf(-20, 20), vy = Rf(20, 60), max = .55f, size = 3, drag = 2, col = p.col.Light(.4f), kind = K_SPARK });

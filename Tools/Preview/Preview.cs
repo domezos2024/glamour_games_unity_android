@@ -2,7 +2,7 @@
 // "Glamour/Shape" und "Glamour/Backdrop" sowie Bloom/Tonemapping nachbildet. Fuer Screenshots, visuelle Tests
 // und schnelle Iteration in Umgebungen ohne Unity-Editor (z. B. CI).
 //
-//   dotnet run -- --scene=menu|options|0..9 --t=2.5 --out=bild.png [--script="c,800,450@1.2;k,Space@2"] [--scale=1]
+//   dotnet run -- --scene=menu|options|0..9 --t=2.5 --out=bild.png [--script="c,800,450@1.2;k,Space@2"] [--scale=1] [--skip=2 (Gegnerwahl+Muenzwurf ueberspringen)]
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -58,6 +58,7 @@ namespace GlamourGames
                 else if (a.StartsWith("--out=")) outp = a.Substring(6);
                 else if (a.StartsWith("--script=")) script = a.Substring(9);
                 else if (a.StartsWith("--scale=")) S = float.Parse(a.Substring(8), CultureInfo.InvariantCulture);
+                else if (a.StartsWith("--skip=")) Opponents.Skip = int.Parse(a.Substring(7));
             }
             W = (int)(1600 * S); H = (int)(900 * S);
             string root = FindRoot();

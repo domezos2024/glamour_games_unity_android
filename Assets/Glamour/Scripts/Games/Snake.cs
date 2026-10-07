@@ -27,7 +27,7 @@ namespace GlamourGames
         }
         void Reset()
         {
-            gen++; body = new List<(int x, int y)> { (4, 8), (3, 8), (2, 8) }; prev = body.ToList(); dir = next = (1, 0); turns.Clear(); score = 0; speed = .17f; acc = 0; running = false; dead = false; started = false; Modal = null;
+            gen++; rag1 = rag2 = null; body = new List<(int x, int y)> { (4, 8), (3, 8), (2, 8) }; prev = body.ToList(); dir = next = (1, 0); turns.Clear(); score = 0; speed = .17f; acc = 0; running = false; dead = false; started = false; Modal = null;
             score2 = 0; dead1 = dead2 = false; dir2 = (-1, 0);
             body2 = Duel ? new List<(int x, int y)> { (N - 5, N - 9), (N - 4, N - 9), (N - 3, N - 9) } : new List<(int x, int y)>(); prev2 = body2.ToList();
             PlaceFood();
@@ -92,8 +92,23 @@ namespace GlamourGames
             if (e2) Eat(1); else body2.RemoveAt(body2.Count - 1);
             Sfx.Play(S.Tick, .12f);
         }
+        // Physik beim Crash: der Kopf prallt ab, der Koerper laeuft mit seiner Geschwindigkeit nach (Traegheit), staucht sich
+        // als Gliederkette zusammen und kommt durch Bodenreibung zur Ruhe (Draufsicht, keine Schwerkraft)
+        Chain rag1, rag2;
+        Chain Ragdoll(List<(int x, int y)> b, (int x, int y) d)
+        {
+            var pts = b.Select(P).ToList(); var ch = new Chain(pts, CS * .92f) { Friction = 3.2f, E = .3f, HasBounds = true, Bounds = Gfx.R(BX + CS * .3f, BY + CS * .3f, N * CS - CS * .6f, N * CS - CS * .6f) };
+            float v = CS / speed;
+            for (int i = 0; i < pts.Count; i++)
+            {
+                float dx = i == 0 ? d.x : pts[i - 1].X - pts[i].X, dy = i == 0 ? d.y : pts[i - 1].Y - pts[i].Y, l = MathF.Max(1e-3f, MathF.Sqrt(dx * dx + dy * dy));
+                float k = i == 0 ? -.35f : 1; ch.Vx[i] = dx / l * v * k + (Rng.F() - .5f) * v * .3f; ch.Vy[i] = dy / l * v * k + (Rng.F() - .5f) * v * .3f;
+            }
+            return ch;
+        }
         void Die()
         {
+            rag1 = Ragdoll(body, dir);
             dead = true; running = false; deadT = 0; dead1 = true; Sfx.Play(S.Die); App.Shake(16); App.Flash(C.Red, .35f); var hp = P(body[0]); Fx.Burst(hp.X, hp.Y, 60, new[] { C.Green, C.Red, Col.White }, 500); Fx.Explosion(hp.X, hp.Y, 1f); Sfx.Play(S.Boom, .6f);
             bool nb = score > best; if (nb) { best = score; Save.Set("sn_best", best); }
             int g = gen;
@@ -101,6 +116,7 @@ namespace GlamourGames
         }
         void DieDuel(bool d1, bool d2)
         {
+            if (d1) rag1 = Ragdoll(body, dir); if (d2) rag2 = Ragdoll(body2, dir2);
             dead = true; running = false; deadT = 0; dead1 = d1; dead2 = d2; Sfx.Play(S.Die); App.Shake(16); App.Flash(C.Red, .35f); Sfx.Play(S.Boom, .6f);
             if (d1) { var hp = P(body[0]); Fx.Burst(hp.X, hp.Y, 60, new[] { C.Green, C.Red, Col.White }, 500); Fx.Explosion(hp.X, hp.Y, 1f); }
             if (d2) { var hp = P(body2[0]); Fx.Burst(hp.X, hp.Y, 60, new[] { C.Pink, C.Red, Col.White }, 500); Fx.Explosion(hp.X, hp.Y, 1f); }
@@ -117,7 +133,7 @@ namespace GlamourGames
         static Pt P((int x, int y) c) => new Pt(BX + c.x * CS + CS / 2, BY + c.y * CS + CS / 2);
         public override void Update(float dt)
         {
-            eatT += dt; if (dead) { deadT += dt; return; }
+            eatT += dt; if (dead) { deadT += dt; rag1?.Update(dt); rag2?.Update(dt); return; }
             if (running) { acc += dt; while (acc >= speed && running) { acc -= speed; Tick(); } }
             if (running && Rng.F() < dt * 30) { var h = Pos(body, prev, 0); Fx.Spark(h.X, h.Y, C.Green, 1, 30); }
             if (running && Duel && body2.Count > 0 && Rng.F() < dt * 30) { var h = Pos(body2, prev2, 0); Fx.Spark(h.X, h.Y, C.Pink, 1, 30); }
@@ -148,8 +164,8 @@ namespace GlamourGames
             var fp = P(food); float pl = 1 + .12f * MathF.Sin(Time * 6);
             Gfx.Light(c, fp.X, fp.Y, CS * 1.4f, C.Yellow, .4f * pl, 1.6f); Gfx.Ball(c, fp.X, fp.Y, CS * .32f * pl, C.Yellow.Mix(C.Orange, .3f)); Gfx.Star(c, fp.X + MathF.Cos(Time * 3) * CS * .5f, fp.Y + MathF.Sin(Time * 3) * CS * .5f, 5, C.White.A(.8f), Time);
             float fade1 = dead1 ? Math.Max(0, 1 - deadT * .8f) : 1, fade2 = dead2 ? Math.Max(0, 1 - deadT * .8f) : 1;
-            if (Duel && body2.Count > 0) DrawSnake(c, body2, prev2, dir2, C.Pink, Pink2, fade2);
-            DrawSnake(c, body, prev, dir, C.Green, new Col(0, 120, 90), fade1);
+            if (Duel && body2.Count > 0) DrawSnake(c, body2, prev2, dir2, C.Pink, Pink2, fade2, dead2 ? rag2 : null);
+            DrawSnake(c, body, prev, dir, C.Green, new Col(0, 120, 90), fade1, dead1 ? rag1 : null);
             if (!started && !dead)
             {
                 Gfx.Rect(c, Gfx.Ctr(800, 460, 640, Duel ? 170 : 130), 24, Col.Black.A(.6f)); Gfx.Text(c, Platform.Pick("Pfeiltasten / WASD oder Kreuz", "Wischen oder Steuerkreuz"), 800, 435, 34, Col.White, Al.C, true, 6); Gfx.Text(c, "Leertaste = Start / Pause", 800, 485, 26, C.Dim, Al.C, false);
@@ -158,9 +174,9 @@ namespace GlamourGames
             else if (!running && !dead) Gfx.Text(c, "PAUSE", 800, 460, 80, C.Yellow, Al.C, true, 20);
         }
         /// <summary>Schlange aus beleuchteten 3D-Kugeln mit weichem Schatten und Neon-Schein.</summary>
-        void DrawSnake(Canvas2D c, List<(int x, int y)> b, List<(int x, int y)> pv, (int x, int y) d, Col head, Col tail, float fade)
+        void DrawSnake(Canvas2D c, List<(int x, int y)> b, List<(int x, int y)> pv, (int x, int y) d, Col head, Col tail, float fade, Chain rag = null)
         {
-            int n = b.Count; if (n == 0 || fade <= 0) return; var pts = new Pt[n]; for (int i = 0; i < n; i++) pts[i] = Pos(b, pv, i);
+            int n = b.Count; if (n == 0 || fade <= 0) return; var pts = new Pt[n]; for (int i = 0; i < n; i++) pts[i] = rag != null && i < rag.Count ? new Pt(rag.X[i], rag.Y[i]) : Pos(b, pv, i);
             var shp = Gfx.Fill(Col.Black.A(.35f * fade)); shp.Blur = 6;
             for (int i = n - 1; i >= 0; i--) { float t = i / (float)Math.Max(1, n - 1); c.DrawCircle(pts[i].X + 4, pts[i].Y + 7, CS * (.46f - .17f * t), shp); }
             for (int i = n - 1; i >= 0; i--)

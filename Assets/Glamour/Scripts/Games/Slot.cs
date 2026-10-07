@@ -222,7 +222,9 @@ namespace GlamourGames
         int TurnsLeft(int p, int from) { int n = 0; for (int t = from; t < DuelRounds * 2; t++) if ((firstP + t) % 2 == p) n++; return n; }
 
         bool spinning, inFree; int freeSpins; string fsSym; long fsSum, lastWin;
-        readonly float[] pos = new float[5], rs = new float[5], re = new float[5], rt = new float[5], rd = new float[5], last = new float[5], bump = new float[5]; readonly bool[] moving = new bool[5];
+        readonly float[] pos = new float[5], re = new float[5], last = new float[5]; readonly bool[] moving = new bool[5];
+        // Walzen als Trommeln mit Motor, Bremse und Rastfeder (siehe Drum)
+        readonly Drum[] drums = Enumerable.Range(0, 5).Select(_ => new Drum()).ToArray();
         string[][] grid = new string[5][]; string msg = ""; List<(int li, string sym, int n, long win)> wins = new List<(int, string, int, long)>(); int showLine = -2; float lineT, prevT; List<int> expReels = new List<int>(); float expT = 99; string expSym;
         (string title, string sub, string img)? overlay; float ovT;
         enum GambleMode { Cards, Ladder }
@@ -241,7 +243,7 @@ namespace GlamourGames
         public override void Enter()
         {
             base.Enter(); soloCredits = LoadCents();
-            for (int r = 0; r < 5; r++) { pos[r] = last[r] = Rng.I(Strips[r].Length); bump[r] = 9; }
+            for (int r = 0; r < 5; r++) { pos[r] = last[r] = Rng.I(Strips[r].Length); drums[r].Snap(pos[r]); }
             SetGrid();
             bSpin = Ui.Add(new Button(732, 672, 136, 136, "SPIN", C.Gold, () => Spin(), 34) { Round = true });
             bBetM = Ui.Add(new Button(520, 725, 60, 54, "-", C.Purple, () => ChangeBet(-1), 34)); bBetP = Ui.Add(new Button(600, 725, 60, 54, "+", C.Purple, () => ChangeBet(1), 34));
@@ -268,7 +270,7 @@ namespace GlamourGames
         {
             gen++; Co.Clear(); overlay = null; autoOn = false; g.Busy = false; EndGamble(); g.Hist.Clear(); inFree = false; freeSpins = 0; fsSym = null; fsSum = 0;
             spinning = false; fastStopping = false; wins.Clear(); showLine = -2; expReels.Clear(); expT = 99; lastWin = 0; cpuPlan = false;
-            for (int r = 0; r < 5; r++) if (moving[r]) { moving[r] = false; pos[r] = re[r]; bump[r] = 0; }
+            for (int r = 0; r < 5; r++) if (moving[r] || drums[r].Settling) { moving[r] = false; pos[r] = re[r]; drums[r].Snap(re[r]); }
             SetGrid();
             duel = VsCpu; duelLive = duelOver = turnLive = turnReady = false; gMode = gModeHuman;
             if (!duel) { soloCredits = LoadCents(); msg = Platform.Pick("Viel Glück! Leertaste = SPIN / STOPP", "Viel Glück! SPIN antippen = drehen / stoppen"); return; }
@@ -352,7 +354,7 @@ namespace GlamourGames
             }
         }
 
-        void SetGrid() { for (int r = 0; r < 5; r++) grid[r] = Enumerable.Range(0, 3).Select(k => Sym(r, (int)MathF.Floor(pos[r]) + k)).ToArray(); }
+        void SetGrid() { for (int r = 0; r < 5; r++) grid[r] = Enumerable.Range(0, 3).Select(k => Sym(r, (int)MathF.Round(pos[r]) + k)).ToArray(); }
         static string Sym(int r, int i) => SlotMath.Sym(r, i);
         void ChangeBet(int d) { if (!HumanOk || spinning || inFree || g.Active) return; LbIdx = Math.Clamp(LbIdx + d, 0, LineBets.Length - 1); Sfx.Play(S.Chip); }
         void ChangeLines(int d) { if (!HumanOk || spinning || inFree || g.Active) return; NLines = Math.Clamp(NLines + d, 1, 10); prevT = 1.6f; Sfx.Play(S.Chip); }
@@ -394,8 +396,8 @@ namespace GlamourGames
             {
                 if (!moving[r]) continue;
                 int L = Strips[r].Length; float cur = pos[r]; float curMod = ((cur % L) + L) % L; float dist = curMod - stops[r];
-                while (dist < 1.5f) dist += L;
-                rs[r] = cur; re[r] = cur - dist; rt[r] = 0; rd[r] = 0.06f + r * 0.035f;
+                float need = Math.Max(1.5f, drums[r].V * drums[r].V / (2 * 650) + .3f); while (dist < need) dist += L;
+                re[r] = cur - dist; drums[r].Brake(re[r]);
             }
             Sfx.Play(S.Stop, .7f, 1.2f);
             msg = "Schnellstopp!";
@@ -420,7 +422,7 @@ namespace GlamourGames
             for (int r = 0; r < 5; r++)
             {
                 int L = Strips[r].Length; float st = pos[r]; float minTravel = L * (2 + r * .6f); int e = stops[r] + L * (int)MathF.Floor((st - minTravel - stops[r]) / L);
-                rs[r] = st; re[r] = e; rt[r] = 0; rd[r] = .9f + r * .3f; moving[r] = true;
+                re[r] = e; drums[r].Pos = st; drums[r].Spin(e, .9f + r * .3f); moving[r] = true;
             }
             yield return (Func<bool>)(() => !moving.Any(m => m));
             spinning = false; fastStopping = false;
@@ -571,11 +573,11 @@ namespace GlamourGames
             ovT += dt; expT += dt; lineT += dt; prevT = Math.Max(0, prevT - dt); g.Flip.Update(dt);
             for (int r = 0; r < 5; r++)
             {
-                last[r] = pos[r]; bump[r] += dt;
-                if (moving[r])
+                last[r] = pos[r];
+                if (moving[r] || drums[r].Settling)
                 {
-                    rt[r] += dt; float p = Ease.Clamp(rt[r] / rd[r]); pos[r] = rs[r] + (re[r] - rs[r]) * (1 - MathF.Pow(1 - p, 3));
-                    if (p >= 1) { moving[r] = false; pos[r] = re[r]; bump[r] = 0; Sfx.Play(S.Stop, .5f, 1 + r * .05f); float x = RX + r * (CW + GP) + CW / 2, y = RY + 1.5f * (CW + GP); Fx.Spark(x, y + 60, C.Gold, 5, 150); }
+                    bool hit = drums[r].Update(dt); pos[r] = drums[r].Pos;
+                    if (hit && moving[r]) { moving[r] = false; Sfx.Play(S.Stop, .5f, 1 + r * .05f); float x = RX + r * (CW + GP) + CW / 2, y = RY + 1.5f * (CW + GP); Fx.Spark(x, y + 60, C.Gold, 5, 150); }
                 }
             }
             bool act = !spinning && !Co.Busy && overlay == null;
@@ -639,17 +641,16 @@ namespace GlamourGames
             {
                 var col = Gfx.R(RX + r * (CW + GP) - 2, RY - 4, CW + 4, 3 * CW + 2 * GP + 8); c.Save(); c.ClipRoundRect(col, 16);
                 Gfx.Rect(c, col, 14, new Col(20, 8, 2)); float v = Math.Abs(pos[r] - last[r]) * (CW + GP) / Math.Max(.001f, .016f); float fl = MathF.Floor(pos[r]), fr2 = pos[r] - fl;
-                float off = bump[r] < 1 ? MathF.Sin(bump[r] * 26) * 9 * MathF.Exp(-bump[r] * 9) : 0;
-                c.Save(); c.Translate(0, off);
+                c.Save();
                 for (int k = -1; k <= 3; k++)
                 {
                     var cr = Cell(r, 0); float y = RY + (k - fr2) * (CW + GP); var rect = Gfx.R(cr.Left, y, CW, CW); string sym = Sym(r, (int)fl + k); bool hl = !moving[r] && !spinning && k >= 0 && k < 3 && HL.Contains((r, k));
                     bool dimIt = !moving[r] && !spinning && HL.Count > 0 && !hl && k >= 0 && k < 3;
                     // Bewegungsunschaerfe: versetzte, durchscheinende Kopien (wie Original per SaveLayer-Alpha)
                     // Zylinder-Projektion der Walze: Symbole wandern auf einer Trommel (oben/unten gestaucht)
-                    float drumR = col.Height * .62f, th = (y + CW / 2f - col.MidY - off) / drumR;
+                    float drumR = col.Height * .62f, th = (y + CW / 2f - col.MidY) / drumR;
                     if (Math.Abs(th) > 1.5f) continue;
-                    c.Save(); c.Translate(rect.MidX, col.MidY - off + drumR * MathF.Sin(th)); c.Scale(1, MathF.Cos(th)); c.Translate(-rect.MidX, -(y + CW / 2f));
+                    c.Save(); c.Translate(rect.MidX, col.MidY + drumR * MathF.Sin(th)); c.Scale(1, MathF.Cos(th)); c.Translate(-rect.MidX, -(y + CW / 2f));
                     if (v > 1800) { for (int gI = 1; gI <= 3; gI++) { var gr2 = Gfx.R(cr.Left, y - gI * v * .006f, CW, CW); c.SaveLayer(90f / gI / 255f); DrawCell(c, gr2, sym); c.Restore(); } }
                     DrawCell(c, rect, sym, hl ? 1.05f + .04f * pu : 1, dimIt ? .5f : 0, hl, pu);
                     c.Restore();

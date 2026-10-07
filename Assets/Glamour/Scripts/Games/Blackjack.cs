@@ -11,7 +11,9 @@ namespace GlamourGames
         public override string OppKey => "bj";
         // "Computer denkt nach" über dem Panel von Spieler 2
         public override Pt ThinkPos => new Pt(PX[1], 612);
-        class Card { public string Rank; public int Suit; public float X, Y, SX, SY, T, Lift; public Spring Flip = new Spring(0) { K = 170, D = 20 }; public bool Up; public float Rot; }
+        class Card { public string Rank; public int Suit; public float X, Y, SX, SY, T, Lift; public Spring Flip = new Spring(0) { K = 170, D = 20 }; public bool Up; public float Rot; public Glide G; }
+        // Karte 63 mm breit -> rund 1750 px/m; Gleitreibung Karte auf Filz ~0,3
+        static readonly float Gk = Phys.Gpx(1750); readonly ChipStack[] stacks = { new ChipStack(), new ChipStack() };
         class Hand { public List<Card> Cards = new List<Card>(); public string Status = "waiting", Result; public long Bet = 10, Credits = 1000; public bool Doubled; }
         readonly Hand[] pl = { new Hand(), new Hand() }; readonly List<Card> dealer = new List<Card>(); bool revealed; string phase = "betting"; int turn = -1; List<(string r, int s)> shoe = new List<(string, int)>(); string msg = "";
         Button bDeal, bHit, bStand, bDouble, bRefill, bNew, oppBtn; readonly Button[] bm = new Button[2], bp = new Button[2];
@@ -177,7 +179,8 @@ namespace GlamourGames
             {
                 var c = hand[i]; float tx = cx + (i - (n - 1) / 2f) * off, ty = cy; c.Flip.Update(dt);
                 // Flugbogen als "Anheben" -> Schatten löst sich sichtbar vom Filz
-                if (c.T < 1) { c.T += dt / .4f; float e = Ease.OutCubic(c.T); c.X = c.SX + (tx - c.SX) * e; c.Y = c.SY + (ty - c.SY) * e; c.Lift = MathF.Sin(e * MathF.PI) * 60; c.Rot = Ease.Lerp(20, 0, e); }
+                // Wurf aus dem Schlitten: kurze Flugphase, dann Rutschen auf dem Filz bis zum Stillstand genau am Platz
+                if (c.T < 1) { c.G ??= new Glide(c.SX, c.SY, tx, ty, 20, Gk, .3f, .16f); c.G.Update(dt); c.X = c.G.X; c.Y = c.G.Y; c.Lift = c.G.Lift; c.Rot = c.G.Rot; c.T = c.G.Done ? 1 : Math.Min(.99f, c.G.T / c.G.Duration); }
                 else { c.Lift = 0; c.X += (tx - c.X) * Math.Min(1, dt * 12); c.Y += (ty - c.Y) * Math.Min(1, dt * 12); }
             }
         }
@@ -214,7 +217,7 @@ namespace GlamourGames
         {
             var p = pl[i]; float cx = PX[i]; bool act = turn == i; var col = i == 0 ? C.Cyan : C.Pink;
             if (act) Gfx.Light(c, cx, PY, 260, col, .12f, 1.3f);
-            if (p.Bet > 0) Chip3D.Stack(c, cx + 250 * (i == 0 ? 1 : -1), 610, 24, (int)Math.Min(8, Math.Max(1, p.Bet / 10)), i == 0 ? C.Cyan : C.Pink, Col.White.Mix(i == 0 ? C.Cyan : C.Pink, .25f));
+            stacks[i].Draw(c, Time, cx + 250 * (i == 0 ? 1 : -1), 610, 24, p.Bet > 0 ? (int)Math.Min(8, Math.Max(1, p.Bet / 10)) : 0, i == 0 ? C.Cyan : C.Pink, Col.White.Mix(i == 0 ? C.Cyan : C.Pink, .25f));
             DrawHand(c, p.Cards, i);
             var box = Gfx.Ctr(cx, 708, 440, 112); if (act) Gfx.Glow(c, box, 20, col, 16, .5f + .3f * MathF.Sin(Time * 5)); W.Panel(c, box, col);
             Gfx.Text(c, PName(i) + (act ? "  -  am Zug" : ""), cx - 200, 676, 24, act ? col.Light(.4f) : Col.White, Al.L, true, act ? 6 : 0);
