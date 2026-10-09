@@ -28,7 +28,7 @@ Legende: `S` = Simulation/Mehrprozess über TCP (echter Session-/Link-/Szenencod
 | Android ↔ Windows | G (frühere 2-Spieler-Version), neue Version offen | – | – |
 | Windows ↔ Windows | – | – | – |
 
-Stand der Prüfungen: 195 automatische Protokollprüfungen (Konsolentests), Mehrprozess-Läufe Memory (3), Kniffel (3), Snake (4), Blackjack (3), Poker (3 und 4) mit identischem öffentlichem Zustand. Echte Bluetooth-Läufe mit 3–4 Geräten stehen aus.
+Stand der Prüfungen: 251 automatische Prüfungen (Protokoll, Sitzung, Transportvertrag, Poker-Regeln) (Konsolentests), Mehrprozess-Läufe Memory (3), Kniffel (3), Snake (4), Blackjack (3), Poker (3 und 4) mit identischem öffentlichem Zustand. Echte Bluetooth-Läufe mit 3–4 Geräten stehen aus.
 
 ## 3. Messziele (1.4)
 
@@ -67,3 +67,5 @@ Vor jedem Merge von Mehrspieler-Code abhaken:
 - [ ] Host überspringt eigene Deltas (`if (Link.IsHost) return;`), keine doppelte Anwendung.
 - [ ] Kein Zustandswechsel im Frame während `Link.Frozen`.
 - [ ] Mehrprozess-Test (3–4 Prozesse) und `Tools/Tests` laufen grün.
+
+Windows-Repo: [`domezos2024/glamour_games_unity`](https://github.com/domezos2024/glamour_games_unity) übernimmt diese Änderungen anhand von `dies-für-windows-version.md`; Stand dort: noch nicht umgesetzt.
