@@ -1,74 +1,54 @@
-# Glamour Games Unity Android
+# Glamour Games Android 3.0.0
 
-**10 glitzernde Spiele für Android – zu zweit am selben Gerät, gegen den Computer (Leicht / Mittel / Schwer) oder per Bluetooth mit 2–4 Spielern.**
-Android-Schwesterprojekt der [Glamour Games Unity Edition für Windows](https://github.com/domezos2024/glamour_games_unity) (`domezos2024/glamour_games_unity`; Unity 6.3 LTS, URP, HDR-Bloom, 3D-Physik). Beide Repos teilen den Spielcode und das Bluetooth-Protokoll; Android-spezifisch sind nur `AndroidBt.cs`, `GlamourBt.java` und der Build, Windows-spezifisch nur `WinBt.cs`.
-Privates Repository.
+Zehn Spiele mit Computergegnern, Neon-Grafik, 3D-Physik und Bluetooth-Mehrspieler.
 
-<img src="docs/android/menu.jpg" width="900" alt="Hauptmenü">
+**7 Tage automatisch kostenlos testen - ohne PayPal-Anmeldung und ohne Zahlungsmittel.**
+Danach optional **1,99 EUR je 30 Tage** per PayPal-Abo. Ohne ausdruecklichen Abo-Abschluss
+wird nichts abgebucht. Nach dem Test sind die Spiele ohne bezahlte Lizenz gesperrt.
+Internet ist fuer Start und regelmaessige Lizenzpruefungen erforderlich.
 
-## Funktionsumfang
+## Download
 
-* Alle 10 Spiele mit vollständiger Spiellogik und KI-Gegnern: Memory, Tic Tac Toe, Vier Gewinnt, Schiffe Versenken, Snake, Kniffel, Nim, Slot, Blackjack, Poker.
-* Gleiche Grafik wie die Windows-Version: SDF-Renderer, HDR-Bloom, 3D-Würfel mit Starrkörperphysik, 3D-Münze, Chips, Schiffe, Siegerpokal in PBR-Gold, Feuerwerk, Münzregen, Luftschlangen.
-* Touch-Bedienung (Kacheln, Buttons, Spielfeld), Zurück-Taste (zweimal im Menü beendet die App), Pause bei Verlassen der App.
-* Bildschirmtastatur im Namens-Dialog (Highscore), Haptik (abschaltbar in den Optionen), Ton mit Musik/Effekt-Schalter.
-* Sicherer Bereich: Display-Aussparungen (Cutout) und Navigationsleiste werden ausgespart, der Hintergrund füllt trotzdem den ganzen Bildschirm.
-* Adaptive Render-Auflösung (`AdaptiveQuality`) hält die Bildrate stabil; 60-FPS-Limit, MSAA 4 für die 3D-Rigs.
-* **Bluetooth-Mehrspieler:** Memory, Kniffel, Snake, Blackjack und Poker mit **2–4 Spielern** (ein Host, bis zu drei Gäste, Stern-Topologie, Host entscheidet alles); Tic Tac Toe, Vier Gewinnt, Schiffe Versenken, Nim und Slot zu zweit. Handy mit Handy oder Handy mit PC ([Windows-Version](https://github.com/domezos2024/glamour_games_unity)). Geräte koppeln, im Menü (Symbol oben links) eröffnen bzw. beitreten; der Eröffner wählt das Spiel. Bei Verbindungsverlust pausiert die Partie bis zu 45 s und läuft nach Wiederverbindung weiter. Hinweis: 3–4 Teilnehmer sind bisher nur per Simulation geprüft, nicht mit echten Geräten (Stand siehe `docs/Mehrspieler-Spezifikation.md`). Die Windows-Version spielt aktuell noch die Zwei-Spieler-Variante.
-* **Realistische Physik:** echte Fallbeschleunigung je Objektgröße, Stöße mit Restitution und Reibung, Kniffel-Würfel stoßen aneinander und lassen sich per Wischgeste werfen, Karten rutschen über den Filz, Chips fallen auf den Stapel, Walzen rasten federnd ein, Schiffe schaukeln und sinken mit Schlagseite, Pokal kippelt aus.
+* [Windows 3.0.0: Installer und portable ZIP](https://github.com/domezos2024/glamour_games_unity/releases/tag/v3.0.0)
+* [Android 3.0.0: signierte ARM64-APK](https://github.com/domezos2024/glamour_games_unity_android/releases/tag/v3.0.0)
+* [Testzeit, Abo, Wiederherstellung und Datenschutz](docs/ABONNEMENT.md)
+* [Aenderungen in 3.0.0](CHANGELOG.md)
 
-## Technik
+Voraussetzungen: Windows 10/11 (64 Bit, DirectX 11/12) bzw. Android 8.0+ (ARM64).
+Android wird direkt als APK angeboten; die neue Version ist nicht in Google Play.
+Pruefsummen stehen in SHA256SUMS.txt beim jeweiligen GitHub-Release.
 
-| | |
-| --- | --- |
-| Engine | Unity 6000.3.25f1, URP 17.3 |
-| Zielplattform | Android 8.0+ (API 26), ARM64, IL2CPP, Vulkan mit GLES3-Fallback |
-| Paket-ID | `de.domezosware.glamourgames.unityandroid` |
-| Ausrichtung | Querformat (automatisch gedreht) |
-| Designraum | 1600 × 900, Anpassung per Kamera (Letterbox-frei, Ränder zeigen Hintergrund) |
+## Die zehn Spiele
 
-Plattformcode: `Assets/Glamour/Scripts/Core/Platform.cs` (Touch-Erkennung), `Haptics.cs` (JNI-Vibration), `App.cs` (Ansicht/Safe-Area, Touch, Lebenszyklus), `Scene.cs` (Bildschirmtastatur im Modal), `URP/AdaptiveQuality.cs`.
+Memory, Tic Tac Toe, Vier Gewinnt, Schiffe Versenken, Snake, Kniffel, Nim,
+Buch der Pharaonen, Black Jack und Poker. Jedes Spiel bietet Computergegner in drei Staerken.
+Poker, Memory, Kniffel, Snake und Black Jack unterstuetzen zwei bis vier Bluetooth-Spieler;
+die anderen Mehrspieler-Modi bleiben bei zwei Personen. Gespielt wird ausschliesslich mit
+Spielpunkten - keine Echtgeldwetten, keine kaufbaren Chips und keine Geldgewinne.
 
-## Bauen
+## Testen und bauen
 
-```powershell
-# Voraussetzung: Unity 6000.3.25f1 mit Android-Modul (SDK, NDK, OpenJDK)
-Unity.exe -batchmode -quit -buildTarget Android -projectPath <Repo> `
-  -executeMethod GlamourGames.EditorTools.ProjectBootstrap.CiBuild `
-  -buildPath <Ziel>\GlamourGamesUnityAndroid.apk [-aab] [-development] [-versionCode N] -logFile build.log
-```
-
-Alternativ im Editor: Menü **Glamour Games / Android-APK erstellen**. Der erste Build dauert rund 9 Minuten.
-
-### Signierung
-
-Release-Builds werden signiert, wenn diese Umgebungsvariablen gesetzt sind (der Schlüssel liegt **nicht** im Repository):
-
-`GLAMOUR_KEYSTORE`, `GLAMOUR_KEYSTORE_PASS`, `GLAMOUR_KEY_ALIAS`, `GLAMOUR_KEY_PASS`
-
-Ohne diese Variablen wird mit dem Debug-Schlüssel signiert. Wer Updates ausliefert, muss immer denselben Schlüssel benutzen.
-
-## Installieren und Testen
+Unity 6000.3.25f1 / URP 17.3. Lizenzserver und oeffentlicher Pruefschluessel sind konfiguriert;
+private PayPal-Zugangsdaten und Signaturschluessel gehoeren niemals ins Repository.
 
 ```powershell
-Tools\Android\install_run.ps1          # installiert die APK per adb und startet die App
-Tools\Android\vd.ps1                   # Testwerkzeug: virtuelles Display (scrcpy) für gesperrtes Gerät
+php Tools/Licensing/policy-tests.php
+dotnet run --project Tools/Licensing/LeaseTests/LeaseTests.csproj -c Release
+dotnet run --project Tools/Tests/GlamourTests.csproj -c Release
 ```
 
-`vd.ps1` erlaubt Screenshots, Touch-Eingaben, Zurück-Taste und Leistungsabfrage (`Vd-Perf`) auch bei gesperrtem Telefon. Ablauf siehe Kopfkommentar der Datei.
+Release-Build: `Tools/Release/Build-Release.ps1`. Android verwendet die vorhandenen
+Signierdaten ausserhalb des Repositories. Danach erstellt Tools/Release/Package-Release.ps1 den Windows-Installer mit Inno Setup 6 sowie ZIP, APK-Pruefung und SHA256-Pruefsummen.
 
-## Getestet
+Verifiziert: 24 Testzeit-/Zahlungstests, 22 Client-Lizenztests und 251 Mehrspielerpruefungen.
+Der Windows-Runtime-Test startet in der kostenlosen Testzeit ohne Zahlungsdaten direkt im Menue.
+Ein aktueller physischer Android-Geraetetest und ein vollstaendiger bezahlter Checkout stehen aus.
 
-* 2–4 Spieler: 251 automatische Konsolenprüfungen (`Tools/Tests`: Protokoll, Sitzung, Transportvertrag, Poker-Regeln) ohne Fehler; Mehrprozess-Läufe über TCP für Memory (3), Kniffel (3), Snake (4), Blackjack (3), Poker (3 und 4); App-Start auf dem Pixel 10. **Nicht geprüft:** 3–4 echte Bluetooth-Geräte, Geräte-Matrix, Profiling mit vier Spielern.
-* Die folgenden Bluetooth-Läufe stammen aus der früheren Zwei-Spieler-Version:
+## Lizenz
 
-* Bluetooth Pixel 10 ↔ Windows-PC (Realtek-Adapter) in beiden Richtungen: Verbindung, Spielwahl durch den Eröffner, gespiegelter Münzwurf, komplette Zugfolge Vier Gewinnt. Alle 10 Spiele zusätzlich im Zwei-Prozess-Test (Vorschau über TCP) synchron.
-* Pixel 10 (Android 16): Start, Menü, alle 10 Spiele mit Gegnerwahl, Münzwurf, KI-Partie Vier Gewinnt bis zum Sieg, Zurück-Taste, 3D-Rigs (Würfel, Münze, Pokal).
-* Keine Unity-Fehler oder Ausnahmen im Log während der Tour. Auf dem virtuellen Display (zusätzliche Video-Kodierung durch scrcpy) laufen die Spiele bei 44–52 FPS mit adaptiver Auflösung 0,6; auf dem echten Display ist die Last geringer.
+Neue proprietaere Bestandteile und kommerzielle Ausgabe ab 3.0.0: [kommerzielle Lizenz](LICENSE).
+Fruehere MIT-Rechte bleiben bestehen: [MIT-Hinweis](legal/MIT-legacy.txt).
+Fremdkomponenten behalten ihre eigenen Lizenzen: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-## Dokumentation
-
-* [`docs/ENGINE.md`](docs/ENGINE.md) – Engine, Spiel-API, Bluetooth-Übersicht
-* [`docs/Mehrspieler-Spezifikation.md`](docs/Mehrspieler-Spezifikation.md) – Regeln, Teststand und Review-Checkliste für 2–4 Spieler
-* [`ChatGPT-Verbesserungen.md`](ChatGPT-Verbesserungen.md) – Maßnahmenliste mit Abhak-Stand
-* [`dies-für-windows-version.md`](dies-f%C3%BCr-windows-version.md) – Schritte, um die Änderungen im Windows-Repo [`glamour_games_unity`](https://github.com/domezos2024/glamour_games_unity) nachzuziehen
+[Engine-Dokumentation](docs/ENGINE.md) · [Bluetooth-Spezifikation](docs/Mehrspieler-Spezifikation.md) ·
+[Betreiber-Dokumentation](Tools/Licensing/README.md) · [historische README](docs/ARCHIVE-README-pre-3.0.md)
