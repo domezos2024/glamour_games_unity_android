@@ -106,6 +106,7 @@ namespace GlamourGames.EditorTools
             if (PlayerSettings.companyName != "DoMeZos-Ware") PlayerSettings.companyName = "DoMeZos-Ware";
             if (PlayerSettings.bundleVersion != GlamourGames.App.Version) PlayerSettings.bundleVersion = GlamourGames.App.Version;
             if (PlayerSettings.colorSpace != ColorSpace.Linear) PlayerSettings.colorSpace = ColorSpace.Linear;
+            if (!PlayerSettings.Android.forceInternetPermission) PlayerSettings.Android.forceInternetPermission = true;
             PlayerSettings.defaultScreenWidth = 1600; PlayerSettings.defaultScreenHeight = 900;
             PlayerSettings.resizableWindow = true;
             PlayerSettings.runInBackground = false; // Mobil: im Hintergrund nichts berechnen (Akku, Ton)

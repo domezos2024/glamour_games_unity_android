@@ -32,3 +32,10 @@ __pycache__/
 
 Tools/Tests/bin/
 Tools/Tests/obj/
+
+!Tools/Licensing/**/*.csproj
+Tools/Licensing/**/bin/
+Tools/Licensing/**/obj/
+Tools/Licensing/private/
+Tools/Licensing/**/*.pem
+Tools/Licensing/**/*.sqlite*
